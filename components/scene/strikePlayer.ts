@@ -261,11 +261,15 @@ export function prepareStrike(
     defender.beginFrame();
     poseDefenderFor(req, defender);
   };
-  /** 닿을 곳: 막았으면 막은 팔다리 표면에서 공격자 쪽으로 살 두께만큼 */
+  // 끝점(주먹 마디)~닿는 면 거리(월드 m): 글러브를 낀 펀치면 글러브 앞면까지, 아니면 살 두께
+  const gloveGap = spec.effector === "fist" ? attacker.gloveFrontGap(limbSide) : null;
+  // 얇은 글러브(4oz)라도 맨손 살 두께보다 얇게 잡지 않는다
+  const gap = Math.max(gloveGap ?? 0, spec.gapM * defender.scale);
+  /** 닿을 곳: 노린 부위(막았으면 막은 팔다리) 표면에서 닿는 면 두께만큼 바깥 */
   const aimPoint = () => {
-    if (hitPart === req.target) return strikeTarget(defender, req.target, spec.gapM);
+    if (hitPart === req.target) return defender.partWorld(req.target).addScaledVector(defender.partFrom(req.target), gap);
     const toAttacker = attacker.fighter.root.position.clone().sub(defender.fighter.root.position).setY(0).normalize();
-    return defender.partWorld(hitPart).addScaledVector(toAttacker, spec.gapM * defender.scale);
+    return defender.partWorld(hitPart).addScaledVector(toAttacker, gap);
   };
 
   // 1) 거리 맞추기: 닿는 순간 자세(회전 최대)에서 뿌리~목표 = 팔다리 길이 × 비율

@@ -9,7 +9,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import { smoothStep } from "@/lib/motion/path";
-import type { BodyPart, FighterId, JointLockId, PartLoad, Sex } from "@/lib/types";
+import type { BodyPart, FighterId, GloveOz, JointLockId, PartLoad, Sex } from "@/lib/types";
 import { colorOfStep } from "./loadColors";
 import { ArrowLayer } from "./arrows";
 import { JointArrow, poseJointLock } from "./jointLockPose";
@@ -277,6 +277,11 @@ export class Stage {
       }
     }
     for (const name of ["upperarm_l", "upperarm_r"]) f.bones.get(name)?.scale.setScalar(shape.armScale);
+  }
+
+  /** 선수 손에 글러브를 끼운다 (oz별 크기, 0 = 맨손). 색은 선수 색 */
+  setGlove(id: FighterId, oz: GloveOz) {
+    this.rigs.get(id)?.setGlove(oz, id);
   }
 
   /** 두 선수 사이 거리(m, 발 가운데끼리) */

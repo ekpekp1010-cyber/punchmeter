@@ -70,12 +70,13 @@ export default function Stage3D({ fighterA, fighterB, onReady, className }: Prop
     };
   }, [stage, sexA, sexB]);
 
-  // 체형 맞추기 (키·체중·리치가 바뀔 때마다, 캐릭터가 다 선 뒤에)
+  // 체형·글러브 맞추기 (키·체중·리치·글러브가 바뀔 때마다, 캐릭터가 다 선 뒤에)
   useEffect(() => {
     if (!stage || loadStatus.kind !== "ready") return;
     for (const f of [fighterA, fighterB]) {
       if (stage.getFighter(f.id)?.sex !== f.sex) continue;
       stage.applyShape(f.id, bodyShape(f, MODELS[MODEL_KEY[f.sex]]));
+      stage.setGlove(f.id, f.gloveOz);
     }
   }, [stage, loadStatus, fighterA, fighterB]);
 

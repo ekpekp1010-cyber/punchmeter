@@ -7,7 +7,8 @@
 import * as THREE from "three";
 import { solveTwoBone } from "@/lib/motion/ik";
 import type { ModelInfo } from "@/lib/motion/bodyShape";
-import type { BodyPart } from "@/lib/types";
+import type { BodyPart, GloveOz } from "@/lib/types";
+import { disposeGlove, gloveLook, makeGlove, type FistShape, type GloveLook } from "./glove";
 import type { StageFighter } from "./stage";
 
 export type ArmSide = "l" | "r";
@@ -78,6 +79,90 @@ export class FighterRig {
     const rightAxis = this.fistAxis("r");
     this.computeFist("r", rightAxis);
     this.computeFist("l", new THREE.Vector3(rightAxis.x, -rightAxis.y, -rightAxis.z));
+    // 주먹 쥔 자세에서 주먹 크기를 재 둔다 (글러브 크기)
+    fighter.model.updateMatrixWorld(true);
+    this.fistShape = { l: this.measureFist("l"), r: this.measureFist("r") };
+  }
+
+  // ── 글러브 ──
+
+  private readonly fistShape: Record<ArmSide, FistShape>;
+  private gloves: THREE.Object3D[] = [];
+  private gloveStyle: GloveLook | null = null;
+
+  /** 주먹 살(손·손가락에 붙은 캐릭터 점)의 크기·방향을 손뼈 기준으로 잰다 (처음 한 번, 주먹 쥔 쉬는 자세) */
+  private measureFist(side: ArmSide): FistShape {
+    const hand = this.bone(`hand_${side}`);
+    const wrist = this.pos(`hand_${side}`);
+    const knuckle = this.pos(`middle_01_${side}`);
+    const along = knuckle.clone().sub(wrist).normalize();
+    const across = this.pos(`index_01_${side}`).sub(this.pos(`pinky_01_${side}`));
+    across.addScaledVector(along, -across.dot(along)).normalize();
+    const normal = new THREE.Vector3().crossVectors(along, across);
+    const handBone = new RegExp(`^(hand|(index|middle|ring|pinky|thumb)_0\\d)_${side}$`);
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    const p = new THREE.Vector3();
+    for (const mesh of this.fighter.meshes) {
+      const skinIndex = mesh.geometry.getAttribute("skinIndex");
+      const skinWeight = mesh.geometry.getAttribute("skinWeight");
+      if (!skinIndex || !skinWeight) continue;
+      for (let i = 0; i < skinIndex.count; i++) {
+        // 가장 크게 붙은 뼈가 손·손가락이면 주먹 살로 본다
+        let best = 0;
+        for (let j = 1; j < 4; j++) if (skinWeight.getComponent(i, j) > skinWeight.getComponent(i, best)) best = j;
+        const bone = mesh.skeleton.bones[skinIndex.getComponent(i, best)];
+        if (!bone || !handBone.test(bone.name)) continue;
+        mesh.localToWorld(mesh.getVertexPosition(i, p)).sub(wrist);
+        const c = _v1.set(p.dot(along), p.dot(across), p.dot(normal));
+        min.min(c);
+        max.max(c);
+      }
+    }
+    const scale = hand.getWorldScale(new THREE.Vector3()).x;
+    const mid = min.clone().add(max).multiplyScalar(0.5);
+    const centerWorld = wrist.clone().addScaledVector(along, mid.x).addScaledVector(across, mid.y).addScaledVector(normal, mid.z);
+    const basis = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(along, across, normal));
+    const quaternion = hand.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(basis);
+    return {
+      center: hand.worldToLocal(centerWorld),
+      quaternion,
+      half: max.clone().sub(min).multiplyScalar(0.5 / scale),
+      knuckleToFrontM: (max.x - knuckle.clone().sub(wrist).dot(along)) / scale,
+      boneScale: scale,
+    };
+  }
+
+  /** 글러브를 끼운다 (oz별 크기, 0이면 맨손). team은 글러브 색(A 빨강, B 파랑) */
+  setGlove(oz: GloveOz, team: "A" | "B") {
+    for (const g of this.gloves) disposeGlove(g);
+    this.gloves = [];
+    this.gloveStyle = gloveLook(oz);
+    if (!this.gloveStyle) return;
+    for (const side of ["l", "r"] as const) {
+      const glove = makeGlove(this.fistShape[side], this.gloveStyle, team);
+      this.bone(`hand_${side}`).add(glove);
+      this.gloves.push(glove);
+    }
+  }
+
+  /** 지금 손 크기 배율 (기본 체형 대비 — 키·리치 배율이 손뼈에 쌓인 것) */
+  private handScale(side: ArmSide): number {
+    return this.bone(`hand_${side}`).getWorldScale(_v1).x / this.fistShape[side].boneScale;
+  }
+
+  /**
+   * 주먹 마디 관절(끝점)에서 상대에 닿는 면까지 거리(월드 m). 글러브를 꼈으면 글러브 앞면, 맨손이면 null.
+   * 글러브 앞면 = 주먹 앞면 + 치는 면 두께
+   */
+  gloveFrontGap(side: ArmSide): number | null {
+    if (!this.gloveStyle) return null;
+    return (this.fistShape[side].knuckleToFrontM + this.gloveStyle.frontPadM) * this.handScale(side);
+  }
+
+  /** 글러브 두께(월드 m, 맨손이면 0) — 가드 자세에서 글러브가 얼굴을 파고들지 않게 띄운다 */
+  private gloveThickness(side: ArmSide): number {
+    return this.gloveStyle ? this.gloveStyle.padM * this.handScale(side) : 0;
   }
 
   private bone(name: string): THREE.Bone {
@@ -365,6 +450,9 @@ export class FighterRig {
       .addScaledVector(left, sideSign * (lead ? 0.1 : 0.13) * s)
       .addScaledVector(_v1.set(0, 1, 0), (lead ? 0.0 : 0.01) * s);
     if (lowered) jaw.addScaledVector(_v1.set(0, 1, 0), -0.32 * s).addScaledVector(left, sideSign * 0.08 * s).addScaledVector(f, -0.06 * s);
+    // 글러브를 꼈으면 그 두께만큼 얼굴에서 띄운다 (뒷손은 턱 옆이라 옆으로도)
+    const t = this.gloveThickness(side);
+    jaw.addScaledVector(f, t).addScaledVector(left, lead ? 0 : sideSign * t);
     return jaw;
   }
 

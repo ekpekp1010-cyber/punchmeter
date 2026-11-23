@@ -9,12 +9,12 @@
 //   - 팔·다리는 힘이 아니라 굽힘 모멘트(N·m)로 기준이 나온다. 힘으로 바꾸려면 받침 간격을 가정해야 하므로
 //     바꾼 값은 앱의 추정이 된다.
 
-import type { BodyPart } from "../types";
+import type { BodyPart, BodyRegion } from "../types";
 import type { RefValue } from "./sources";
 
 export interface ThresholdEntry extends RefValue {
-  /** PRD의 세 부위 (머리·몸통·다리). 팔은 다리와 같은 "limb" 성격이라 별도 표시 */
-  region: BodyPart | "arm";
+  /** 신체 구역 (머리·몸통·팔·다리) */
+  region: BodyRegion;
   /** 세부 부위 (예: 코뼈, 광대뼈) */
   site: string;
   /** 무엇이 일어나는 기준인지 */
@@ -139,6 +139,27 @@ export const PUNCH_TO_HEAD_BRIDGE = {
   verifiedPrimary: true,
 };
 
+/** 중력가속도 (m/s²). g 단위를 m/s²로 바꿀 때 쓴다 */
+export const G_TO_MS2 = 9.80665;
+
+/**
+ * 머리 유효 질량(kg) — 뇌진탕 가속도 기준을 힘으로 환산할 때 쓴다 (환산 추정값).
+ * walilko2005의 평균값으로 계산: 3427 N ÷ (58g × 9.80665) ≈ 6.03kg.
+ * de Leva 1996의 머리 무게(73kg 남성 약 5.1kg)보다 큰 것은 목이 함께 끌려가기 때문으로 본다.
+ * 얼굴 정면 스트레이트에서만 확인된 관계다.
+ */
+export const HEAD_EFFECTIVE_MASS_KG =
+  PUNCH_TO_HEAD_BRIDGE.punchForceN / (PUNCH_TO_HEAD_BRIDGE.headLinearG * G_TO_MS2);
+
+/**
+ * 굽힘 모멘트(N·m)를 힘(N)으로 바꾸는 식 (3점 굽힘, 양 끝 받침 가정).
+ * 맞은 지점이 시작 관절에서 a(m), 뼈 길이 L(m)일 때 힘 = 모멘트 × L ÷ (a × (L − a)).
+ * 가운데(a = L/2)를 맞으면 힘 = 4 × 모멘트 ÷ L 이 된다.
+ * 검증: 넓적다리 395 N·m, 길이 0.422m → 약 3,740 N. 실제로 잰 힘 4,180~4,780 N과 10~20% 차이.
+ */
+export const MOMENT_TO_FORCE_NOTE =
+  "힘 = 모멘트 × L ÷ (a × (L − a)), 가운데를 맞으면 4 × 모멘트 ÷ L (환산 추정값)";
+
 /** 몸통 — 힘이 아니라 VC(m/s) 또는 압축률(%) 기준 */
 export const TORSO_TOLERANCE: ThresholdEntry[] = [
   {
@@ -189,8 +210,75 @@ export const TORSO_TOLERANCE: ThresholdEntry[] = [
   },
 ];
 
+/**
+ * 몸통 옆(옆구리) — 힘(N)으로 나온 기준. 옆 충격 리뷰(yoganandan2007)의 인용으로 확인한 값이다.
+ * 몸통 앞(정면)은 사람에게서 잰 힘·강성 값을 원문으로 확인하지 못했다 (MEDICAL_GAPS 참고).
+ */
+export const TORSO_FORCE: ThresholdEntry[] = [
+  {
+    region: "torso",
+    site: "가슴(옆)",
+    outcome: "MAIS 4 이상 25% 위험",
+    value: 5480,
+    unit: "N",
+    loading: "23.4kg 진자, 사체 (Viano 1989, SAE 892432)",
+    sourceIds: ["yoganandan2007"],
+    confidence: "medium",
+    verifiedPrimary: false,
+    note: "리뷰의 인용으로 확인. 원 논문은 열지 못함",
+  },
+  {
+    region: "torso",
+    site: "복부(옆, 간·비장 포함)",
+    outcome: "MAIS 4 이상 25% 위험",
+    value: 6730,
+    unit: "N",
+    loading: "23.4kg 진자, 사체 (Viano 1989, SAE 892432)",
+    sourceIds: ["yoganandan2007"],
+    confidence: "medium",
+    verifiedPrimary: false,
+    note: "리뷰의 인용으로 확인. 원 논문은 열지 못함",
+  },
+  {
+    region: "torso",
+    site: "가슴·복부(옆), 50번째 백분위 남성",
+    outcome: "AIS 4 이상",
+    value: 3000,
+    unit: "N",
+    loading: "썰매 충돌 실험 (Cavanaugh 1993). 5번째 여성 2160 N, 95번째 남성 3640 N",
+    sourceIds: ["yoganandan2007"],
+    confidence: "medium",
+    verifiedPrimary: false,
+    note: "진자가 아니라 썰매 실험이라 타격과 조건이 더 다름",
+  },
+];
+
 /** 팔·다리 — 힘이 아니라 굽힘 모멘트(N·m) 기준 (넓적다리만 충격 힘 값도 있음) */
 export const LIMB_TOLERANCE: ThresholdEntry[] = [
+  {
+    region: "arm",
+    site: "위팔(위팔뼈), 50번째 백분위 남성",
+    outcome: "골절 50% 위험",
+    value: 257,
+    unit: "N·m",
+    loading: "굽힘, 사체",
+    sourceIds: ["santago2008"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "25% 위험 214 N·m, 75% 위험 296 N·m. 다른 연구(kirkish1996)는 230 N·m · 전단 2.5kN",
+  },
+  {
+    region: "arm",
+    site: "위팔(위팔뼈), 5번째 백분위 여성",
+    outcome: "골절",
+    value: 128,
+    unit: "N·m",
+    loading: "동적 3점 굽힘, 사체",
+    sourceIds: ["duma1999"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±19 N·m. kirkish1996의 5번째 여성 값은 130 N·m",
+  },
   {
     region: "arm",
     site: "아래팔(전완)",
@@ -229,11 +317,36 @@ export const LIMB_TOLERANCE: ThresholdEntry[] = [
   },
 ];
 
+/**
+ * 부위 12곳의 한계 힘을 무엇으로 정할지 (PLAN 작업 3·14에서 이 표대로 계산한다).
+ * - force: 연구값이 이미 힘(N)
+ * - moment: 굽힘 모멘트를 힘으로 환산 (MOMENT_TO_FORCE_NOTE)
+ * - headAccel: 뇌진탕 50% 위험 가속도 × HEAD_EFFECTIVE_MASS_KG
+ * - borrowed: 그 부위 자료가 없어 다른 부위·방향 값을 빌림 ("추정" 표시)
+ * 왼·오른쪽은 같은 기준을 쓴다.
+ */
+export const PART_THRESHOLD_PLAN: Record<
+  BodyPart,
+  { method: "force" | "moment" | "headAccel" | "borrowed"; basis: string; sourceIds: string[] }
+> = {
+  head: { method: "headAccel", basis: "뇌진탕 50% 위험 778 m/s² × 머리 유효 질량 (얼굴뼈 골절 힘은 의학적 판단에 따로 표시)", sourceIds: ["king2003", "walilko2005"] },
+  torsoFront: { method: "borrowed", basis: "정면 자료 없음 → 옆 가슴 5480 N을 빌려 씀", sourceIds: ["yoganandan2007"] },
+  flankLeft: { method: "force", basis: "옆 가슴 5480 N (옆 복부 6730 N보다 낮은 값을 씀)", sourceIds: ["yoganandan2007"] },
+  flankRight: { method: "force", basis: "옆 가슴 5480 N (옆 복부 6730 N보다 낮은 값을 씀)", sourceIds: ["yoganandan2007"] },
+  upperArmLeft: { method: "moment", basis: "위팔뼈 남 257 N·m / 여 128 N·m", sourceIds: ["santago2008", "duma1999"] },
+  upperArmRight: { method: "moment", basis: "위팔뼈 남 257 N·m / 여 128 N·m", sourceIds: ["santago2008", "duma1999"] },
+  forearmLeft: { method: "moment", basis: "아래팔 94 N·m", sourceIds: ["pintar1998"] },
+  forearmRight: { method: "moment", basis: "아래팔 94 N·m", sourceIds: ["pintar1998"] },
+  thighLeft: { method: "force", basis: "넓적다리뼈 옆 충격 4780 N", sourceIds: ["kennedy2004"] },
+  thighRight: { method: "force", basis: "넓적다리뼈 옆 충격 4780 N", sourceIds: ["kennedy2004"] },
+  lowerLegLeft: { method: "moment", basis: "정강이뼈 남 320 N·m / 여 280 N·m", sourceIds: ["nyquist1985"] },
+  lowerLegRight: { method: "moment", basis: "정강이뼈 남 320 N·m / 여 280 N·m", sourceIds: ["nyquist1985"] },
+};
+
 /** 자료를 찾지 못했거나 확인하지 못한 항목 */
 export const MEDICAL_GAPS: string[] = [
-  "갈비뼈 골절을 힘(N) 하나로 나타낸 기준값",
-  "사람의 간 손상 기준을 힘(N)으로 나타낸 값",
-  "위팔뼈(상완골)와 종아리뼈(비골) 단독 기준",
+  "몸통 앞(정면) 가슴·배의 사람 기준 힘 또는 강성 (원 논문이 유료라 확인하지 못함). 지금은 옆 가슴 값을 빌려 씀",
+  "종아리뼈(비골) 단독 기준",
   "근육 타박상 기준값 (같은 힘에도 결과가 달라 기준이 없음)",
   "훅·어퍼컷·킥의 힘과 머리 가속도 관계",
 ];

@@ -15,8 +15,26 @@ export type GloveOz = 0 | 4 | 8 | 10 | 12 | 14 | 16;
 /** 성별. 분절 체중 비율표(de Leva 1996)가 남녀로 나뉘어 있어서 받는다 */
 export type Sex = "male" | "female";
 
-/** 맞은 신체 부위 */
-export type BodyPart = "head" | "torso" | "leg";
+/** 신체 구역 (의학적 판단을 묶어 보여 줄 때 쓴다) */
+export type BodyRegion = "head" | "torso" | "arm" | "leg";
+
+/**
+ * 맞은(또는 막은) 신체 부위 12곳. 누적 충격과 의학적 판단의 단위다.
+ * 관절 찾기 도구의 어깨·팔꿈치·손목, 엉덩이·무릎·발목 위치로 구분한다.
+ */
+export type BodyPart =
+  | "head" // 머리
+  | "torsoFront" // 몸통 앞 (가슴·복부)
+  | "flankLeft" // 왼쪽 옆구리
+  | "flankRight" // 오른쪽 옆구리
+  | "upperArmLeft" // 왼 위팔
+  | "upperArmRight" // 오른 위팔
+  | "forearmLeft" // 왼 아래팔
+  | "forearmRight" // 오른 아래팔
+  | "thighLeft" // 왼 허벅지
+  | "thighRight" // 오른 허벅지
+  | "lowerLegLeft" // 왼 종아리·정강이
+  | "lowerLegRight"; // 오른 종아리·정강이
 
 /** 영상 종류: 직접 찍은 영상 / 경기 영상 */
 export type VideoKind = "self" | "match";
@@ -160,7 +178,7 @@ export interface Strike {
   /** 성공 / 막힌 타격 */
   outcome: "hit" | "blocked";
   target: "body" | "bag" | "mitt";
-  /** 사람 몸에 맞았을 때만 있다 */
+  /** 사람 몸에 닿았을 때만 있다. 막힌 타격이면 막은 부위(아래팔, 정강이 등) */
   bodyPart?: BodyPart;
   /** 속도(m/s) */
   speed: Measured;
@@ -194,6 +212,25 @@ export interface JointLock {
 // ─────────────────────────────────────────────
 // 분석 결과 전체
 // ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+// 부위별 누적 충격
+// ─────────────────────────────────────────────
+
+/**
+ * 한 선수의 한 부위에 재생 시점까지 쌓인 충격.
+ * 누적 비율 = 쌓인 충격력 합 ÷ 그 부위의 한계 힘 × 100
+ */
+export interface PartLoad {
+  fighterId: FighterId;
+  part: BodyPart;
+  /** 쌓인 충격력 합(N), 리게인 추정 기준·글러브 흡수 반영 */
+  accumulatedForceN: number;
+  /** 그 부위의 한계 힘(N). 연구 기준을 힘으로 환산했으면 "환산 추정값" */
+  thresholdN: Measured;
+  /** 한계 힘 대비 누적 비율(%). 한계 힘 자료가 없으면 null */
+  ratioPct: number | null;
+}
 
 export interface AnalysisResult {
   video: VideoInfo;

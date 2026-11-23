@@ -174,6 +174,30 @@ export const SOURCES: Record<string, Source> = {
     citation:
       "Lau IV, Viano DC (1986). The Viscous Criterion — Bases and Applications of an Injury Severity Index for Soft Tissues. SAE 861882.",
   },
+  yoganandan2007: {
+    id: "yoganandan2007",
+    citation:
+      "Yoganandan N, Pintar FA, Stemper BD et al. (2007). Biomechanics of side impact: injury criteria, aging occupants, and airbag technology. J Biomech 40(2):227–243. (Viano 1989 SAE 892432, Cavanaugh 1993의 옆 충격 힘 기준을 정리)",
+    doi: "10.1016/j.jbiomech.2006.01.002",
+  },
+  kirkish1996: {
+    id: "kirkish1996",
+    citation:
+      "Kirkish SL, Begeman PC, Paravasthu NS (1996). Proposed Provisional Reference Values for the Humerus for Evaluation of Injury Potential. 40th Stapp Car Crash Conference.",
+    doi: "10.4271/962416",
+  },
+  santago2008: {
+    id: "santago2008",
+    citation:
+      "Santago AC, Cormier JM, Duma SM (2008). Humerus fracture bending risk function for the 50th percentile male. Biomed Sci Instrum 44:231–236.",
+    url: "https://pubmed.ncbi.nlm.nih.gov/19141921/",
+  },
+  duma1999: {
+    id: "duma1999",
+    citation:
+      "Duma SM, Schreiber PH, McMaster JD, Crandall JR, Bass CR, Pilkey WD (1999). Dynamic injury tolerances for long bones of the female upper extremity. J Anat 194:463–471.",
+    doi: "10.1046/j.1469-7580.1999.19430463.x",
+  },
   pintar1998: {
     id: "pintar1998",
     citation:

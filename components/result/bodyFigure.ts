@@ -27,7 +27,12 @@ interface ScreenPoint {
 export interface FigureOptions {
   /** 부위별 색을 정한다. undefined를 돌려주면 기본 색을 쓴다 (작업 18 누적 색칠용) */
   colorOf?: (part: BodyPart | null) => string | undefined;
+  /** 전체 진하기 (0~1, 기본 1) */
+  opacity?: number;
 }
+
+/** 겹쳐서 안 보여 예측으로 보여 주는 선수의 진하기 */
+export const PREDICTED_OPACITY = 0.4;
 
 /** 한쪽(왼쪽/오른쪽) 팔다리. 굵기 비율은 보통 체형 기준의 눈대중 값 (그림용, 계산에 쓰지 않음) */
 function sideLimbs(side: "left" | "right"): LimbShape[] {
@@ -91,6 +96,7 @@ export function drawBodyFigure(
   const torsoLen = Math.hypot(shoulderMid.x - hipMid.x, shoulderMid.y - hipMid.y);
   if (torsoLen < 4) return;
   const outlineW = Math.max(1.5, torsoLen * 0.025);
+  const fade = options.opacity ?? 1;
 
   const colorFor = (part: BodyPart | null, far: boolean) => {
     const c = options.colorOf?.(part) ?? baseColor;
@@ -109,7 +115,7 @@ export function drawBodyFigure(
     // 테두리를 먼저 모두 그리고 속을 칠해야 관절 이음매가 자연스럽다
     for (const pass of ["outline", "fill"] as const) {
       for (const { limb, a, b } of segments) {
-        ctx.globalAlpha = alphaOf(Math.min(a.visibility, b.visibility));
+        ctx.globalAlpha = fade * alphaOf(Math.min(a.visibility, b.visibility));
         ctx.strokeStyle = pass === "outline" ? outlineColor : colorFor(limb.part, far);
         ctx.lineWidth = limb.width * torsoLen + (pass === "outline" ? outlineW * 2 : 0);
         ctx.beginPath();
@@ -129,7 +135,7 @@ export function drawBodyFigure(
   const earR = at(person, L.rightEar, width, height);
   const headCenter = earL && earR ? { x: (earL.x + earR.x) / 2, y: (earL.y + earR.y) / 2 } : null;
   if (headCenter) {
-    ctx.globalAlpha = alphaOf(Math.min(earL!.visibility, earR!.visibility));
+    ctx.globalAlpha = fade * alphaOf(Math.min(earL!.visibility, earR!.visibility));
     for (const pass of ["outline", "fill"] as const) {
       ctx.strokeStyle = pass === "outline" ? outlineColor : colorFor(null, false);
       ctx.lineWidth = torsoLen * 0.2 + (pass === "outline" ? outlineW * 2 : 0);
@@ -149,7 +155,7 @@ export function drawBodyFigure(
     ctx.closePath();
   };
   const torsoRound = torsoLen * 0.18;
-  ctx.globalAlpha = alphaOf(Math.min(...torso.map((p) => p.visibility)));
+  ctx.globalAlpha = fade * alphaOf(Math.min(...torso.map((p) => p.visibility)));
   torsoPath();
   ctx.strokeStyle = outlineColor;
   ctx.lineWidth = torsoRound + outlineW * 2;

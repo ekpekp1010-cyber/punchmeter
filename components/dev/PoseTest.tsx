@@ -4,12 +4,13 @@
 // PLAN 작업 4: 관절 찾기 시험 화면. 실제 서비스 화면이 아니라 정확도를 눈으로 확인하는 시험용이다.
 
 import { useEffect, useRef, useState } from "react";
-import type { Landmark, NormalizedLandmark } from "@mediapipe/tasks-vision";
+import type { PoseLandmark } from "@/lib/types";
 import { createVideoPoseLandmarker, LANDMARK, PoseLandmarker } from "@/lib/engine/poseLandmarker";
-import { drawBodyFigure, drawSkeleton } from "@/components/result/bodyFigure";
+import { PoseTracker, type TrackedPerson } from "@/lib/engine/poseTracker";
+import { drawBodyFigure, drawSkeleton, PREDICTED_OPACITY } from "@/components/result/bodyFigure";
 import { Figure3DScene } from "@/components/result/bodyFigure3D";
 
-/** 사람마다 다른 색 (찾은 순서. 같은 사람을 이어서 따라가는 기능은 PLAN 작업 8에서 만든다) */
+/** 선수마다 다른 색 (선수 추적기가 정한 번호 순서: 0 = 빨강, 1 = 파랑. 영상 내내 바뀌지 않음) */
 const PERSON_COLORS = ["#ef4444", "#3b82f6"];
 
 /** 손목·발목: 타격 판정에 가장 중요한 관절이라 보이는 정도를 따로 집계한다 */
@@ -19,15 +20,14 @@ const KEY_JOINTS = [LANDMARK.leftWrist, LANDMARK.rightWrist, LANDMARK.leftAnkle,
 const SPEEDS = [0.25, 0.5, 1] as const;
 
 type ViewMode = "3d" | "figure" | "joints";
-
-/** 한 장면에서 찾은 결과 (화면 기준 위치 + 실제 크기 3D 위치) */
-interface Found {
-  image: NormalizedLandmark[][];
-  world: Landmark[][];
-}
+type PoseLandmarkList = PoseLandmark[];
 
 interface Stats {
   frames: number;
+  /** 겹쳐서 못 찾은 선수를 예측으로 이어 그린 장면 수 */
+  predictedFrames: number;
+  /** 화면 밖·안 보이는 다리를 채워 그린 장면 수 */
+  legFilledFrames: number;
   withZero: number;
   withOne: number;
   withTwo: number;
@@ -43,6 +43,8 @@ interface Stats {
 
 const EMPTY_STATS: Stats = {
   frames: 0,
+  predictedFrames: 0,
+  legFilledFrames: 0,
   withZero: 0,
   withOne: 0,
   withTwo: 0,
@@ -62,7 +64,9 @@ export default function PoseTest() {
   /** detectForVideo에 마지막으로 보낸 시각. 다시 시작해도 계속 늘어나야 해서 회차와 상관없이 유지한다 */
   const lastTimestampRef = useRef(-1);
   /** 마지막으로 찾은 사람들 (멈춘 상태에서 보기 방식을 바꿀 때 다시 그리기용) */
-  const lastFoundRef = useRef<Found>({ image: [], world: [] });
+  const lastPeopleRef = useRef<TrackedPerson[]>([]);
+  /** 장면마다 찾은 사람을 선수 2명으로 이어 붙이고, 안 보이는 선수는 예측한다 */
+  const trackerRef = useRef<PoseTracker | null>(null);
   const viewModeRef = useRef<ViewMode>("3d");
   const view3dRef = useRef<HTMLDivElement>(null);
   const scene3dRef = useRef<Figure3DScene | null>(null);
@@ -82,7 +86,8 @@ export default function PoseTest() {
     const container = view3dRef.current;
     if (!container) return;
     const scene = new Figure3DScene(container, PERSON_COLORS);
-    scene3dRef.current = scene;    return () => {
+    scene3dRef.current = scene;
+    return () => {
       scene.dispose();
       scene3dRef.current = null;
     };
@@ -121,9 +126,9 @@ export default function PoseTest() {
   }, [videoUrl]);
 
   /** 오른쪽 칸에 찾은 사람들을 그린다 */
-  function draw(found: Found) {
+  function draw(people: TrackedPerson[]) {
     if (viewModeRef.current === "3d") {
-      scene3dRef.current?.update(found.world, found.image, aspectRef.current);
+      scene3dRef.current?.update(people, aspectRef.current);
       return;
     }
     const canvas = canvasRef.current;
@@ -131,11 +136,18 @@ export default function PoseTest() {
     if (!canvas || !ctx) return;
     ctx.fillStyle = "#111827";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    found.image.forEach((person, i) => {
-      const color = PERSON_COLORS[i % PERSON_COLORS.length];
-      if (viewModeRef.current === "figure") drawBodyFigure(ctx, person, canvas.width, canvas.height, color);
-      else drawSkeleton(ctx, person, canvas.width, canvas.height, color);
-    });
+    for (const person of people) {
+      const color = PERSON_COLORS[person.slot % PERSON_COLORS.length];
+      // 예측으로 보여 주는 선수는 흐리게
+      const opacity = person.predicted ? PREDICTED_OPACITY : 1;
+      if (viewModeRef.current === "figure") drawBodyFigure(ctx, person.image, canvas.width, canvas.height, color, { opacity });
+      else {
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        drawSkeleton(ctx, person.image, canvas.width, canvas.height, color);
+        ctx.restore();
+      }
+    }
   }
 
   /** 진행 중인 분석 반복을 멈춘다 */
@@ -151,7 +163,8 @@ export default function PoseTest() {
     if (!file) return;
     stopLoop();
     setAnalyzing(false);
-    lastFoundRef.current = { image: [], world: [] };
+    lastPeopleRef.current = [];
+    trackerRef.current = null;
     // 영상은 이 브라우저 안에서만 쓰는 임시 주소로 연다 (서버로 보내지 않음)
     setVideoUrl(URL.createObjectURL(file));
     setStats(EMPTY_STATS);
@@ -172,7 +185,7 @@ export default function PoseTest() {
   function onChangeView(value: ViewMode) {
     setViewMode(value);
     viewModeRef.current = value;
-    draw(lastFoundRef.current); // 멈춘 상태에서도 바로 바뀌어 보이게
+    draw(lastPeopleRef.current); // 멈춘 상태에서도 바로 바뀌어 보이게
   }
 
   function start() {
@@ -188,11 +201,16 @@ export default function PoseTest() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     if (video.videoHeight > 0) aspectRef.current = video.videoWidth / video.videoHeight;
+    // 처음부터 다시 분석하므로 선수 추적도 새로 시작한다
+    const tracker = new PoseTracker(aspectRef.current);
+    trackerRef.current = tracker;
     setStats(EMPTY_STATS);
     setAnalyzing(true);
     setStatus("분석 중… (영상을 재생하며 장면마다 관절을 찾아요)");
 
     let frames = 0;
+    let predictedFrames = 0;
+    let legFilledFrames = 0;
     let withZero = 0;
     let withOne = 0;
     let withTwo = 0;
@@ -207,6 +225,8 @@ export default function PoseTest() {
 
     const snapshot = (): Stats => ({
       frames,
+      predictedFrames,
+      legFilledFrames,
       withZero,
       withOne,
       withTwo,
@@ -226,18 +246,23 @@ export default function PoseTest() {
       const timestampMs = Math.max(metadata.mediaTime * 1000, lastTimestampRef.current + 1);
       lastTimestampRef.current = timestampMs;
 
-      let found: Found;
+      let detections: { image: PoseLandmarkList; world: PoseLandmarkList }[];
       const t0 = performance.now();
       try {
         const result = landmarker.detectForVideo(video, timestampMs);
-        found = { image: result.landmarks, world: result.worldLandmarks };
+        detections = result.landmarks.map((image, i) => ({ image, world: result.worldLandmarks[i] ?? [] }));
       } catch (error) {
         setStatus(`이 장면을 분석하다 오류가 났어요: ${String(error)}`);
         return;
       }
       totalMs += performance.now() - t0;
       frames += 1;
-      const people = found.image;
+      const people = detections.map((d) => d.image);
+
+      // 찾은 사람들을 선수 2명으로 이어 붙인다 (겹쳐서 못 찾은 선수는 예측, 잘린 다리는 채움)
+      const tracked = tracker.update(detections, metadata.mediaTime);
+      if (tracked.some((p) => p.predicted)) predictedFrames += 1;
+      if (tracked.some((p) => p.estimatedJoints.length > 0)) legFilledFrames += 1;
 
       if (people.length === 0) withZero += 1;
       else if (people.length === 1) withOne += 1;
@@ -263,8 +288,8 @@ export default function PoseTest() {
       }
       lastPresented = metadata.presentedFrames;
 
-      lastFoundRef.current = found;
-      draw(found);
+      lastPeopleRef.current = tracked;
+      draw(tracked);
 
       if (frames % 10 === 0) setStats(snapshot());
     };
@@ -369,9 +394,17 @@ export default function PoseTest() {
       <table className="w-full max-w-xl text-sm">
         <tbody>
           <tr><td className="py-1 text-gray-600">분석한 장면 수</td><td>{stats.frames}</td></tr>
-          <tr><td className="py-1 text-gray-600">2명 찾은 장면</td><td>{stats.withTwo} ({pct(stats.withTwo)})</td></tr>
+          <tr><td className="py-1 text-gray-600">2명 이상 찾은 장면</td><td>{stats.withTwo} ({pct(stats.withTwo)})</td></tr>
           <tr><td className="py-1 text-gray-600">1명만 찾은 장면</td><td>{stats.withOne} ({pct(stats.withOne)})</td></tr>
           <tr><td className="py-1 text-gray-600">아무도 못 찾은 장면</td><td>{stats.withZero} ({pct(stats.withZero)})</td></tr>
+          <tr>
+            <td className="py-1 text-gray-600">겹쳐서 못 찾은 선수를 예측으로 이어 그린 장면 (흐리게 표시)</td>
+            <td>{stats.predictedFrames} ({pct(stats.predictedFrames)})</td>
+          </tr>
+          <tr>
+            <td className="py-1 text-gray-600">화면 밖·안 보이는 다리를 채워 그린 장면</td>
+            <td>{stats.legFilledFrames} ({pct(stats.legFilledFrames)})</td>
+          </tr>
           <tr><td className="py-1 text-gray-600">손목·발목 평균 보이는 정도 (0~1)</td><td>{stats.avgKeyVisibility.toFixed(2)}</td></tr>
           <tr><td className="py-1 text-gray-600">장면 하나 처리 시간</td><td>{stats.avgMs.toFixed(1)} ms</td></tr>
           <tr>

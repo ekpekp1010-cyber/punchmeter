@@ -4,10 +4,22 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type { Landmark, NormalizedLandmark } from "@mediapipe/tasks-vision";
-import { LANDMARK as L } from "@/lib/engine/poseLandmarker";
-import type { BodyPart } from "@/lib/types";
-import type { FigureOptions } from "./bodyFigure";
+import { LANDMARK as L } from "@/lib/engine/landmarks";
+import type { BodyPart, PoseLandmark } from "@/lib/types";
+import { PREDICTED_OPACITY, type FigureOptions } from "./bodyFigure";
+
+type Landmark = PoseLandmark;
+type NormalizedLandmark = PoseLandmark;
+
+/** 3D 장면에 세울 선수 한 명 (선수 추적기 결과) */
+export interface ScenePerson {
+  /** 0 = 첫 번째 선수, 1 = 두 번째 선수 (색이 정해진다) */
+  slot: number;
+  image: PoseLandmark[];
+  world: PoseLandmark[];
+  /** 이번 장면에서 못 찾아 예측으로 보여 주는 중 */
+  predicted: boolean;
+}
 
 /** 관절 하나, 또는 두 관절의 가운데 */
 type Anchor = number | readonly [number, number];
@@ -114,7 +126,7 @@ class Mannequin {
     };
     const paint = (mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>, visibility: number, color?: string) => {
       mesh.material.color.set(color ?? options.colorOf?.(mesh.userData.part as BodyPart | null) ?? this.baseColor);
-      mesh.material.opacity = opacityOf(visibility);
+      mesh.material.opacity = opacityOf(visibility) * (options.opacity ?? 1);
     };
     let minY = Infinity;
 
@@ -253,25 +265,28 @@ export class Figure3DScene {
    * 찾은 사람들로 모델을 움직인다.
    * 두 사람의 3D 위치는 각자 엉덩이 기준이라, 영상 속 위치를 보고 좌우·위아래 간격을 어림해 벌려 놓는다 (앞뒤 거리는 알 수 없어 같은 줄에 둔다).
    */
-  update(world: Landmark[][], image: NormalizedLandmark[][], aspect: number, options: FigureOptions = {}) {
-    const scales = world
-      .slice(0, this.people.length)
-      .map((w, i) => (image[i] ? metersPerScreenUnit(w, image[i], aspect) : null))
+  update(people: ScenePerson[], aspect: number, options: FigureOptions = {}) {
+    // 거리 어림은 이번 장면에서 실제로 찾은 선수 기준 (예측 중인 선수는 빼고, 없으면 모두 사용)
+    const basis = people.some((p) => !p.predicted) ? people.filter((p) => !p.predicted) : people;
+    const scales = basis
+      .map((p) => metersPerScreenUnit(p.world, p.image, aspect))
       .filter((s): s is number => s !== null);
     const mpu = scales.length ? scales.reduce((a, b) => a + b, 0) / scales.length : 1;
 
     let minY = Infinity;
-    this.people.forEach((mannequin, i) => {
-      const w = world[i];
-      const img = image[i];
-      if (!w || !img) {
+    this.people.forEach((mannequin, slot) => {
+      const person = people.find((p) => p.slot === slot);
+      if (!person) {
         mannequin.hide();
         return;
       }
+      const img = person.image;
       const hipX = (img[L.leftHip].x + img[L.rightHip].x) / 2;
       const hipY = (img[L.leftHip].y + img[L.rightHip].y) / 2;
       const offset = new THREE.Vector3((hipX - 0.5) * aspect * mpu, -(hipY - 0.5) * mpu, 0);
-      minY = Math.min(minY, mannequin.update(w, offset, options));
+      // 예측으로 보여 주는 선수는 흐리게
+      const opacity = (options.opacity ?? 1) * (person.predicted ? PREDICTED_OPACITY : 1);
+      minY = Math.min(minY, mannequin.update(person.world, offset, { ...options, opacity }));
     });
     if (Number.isFinite(minY)) this.grid.position.y = minY;
     this.render();

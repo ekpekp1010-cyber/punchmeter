@@ -121,6 +121,8 @@ export interface PoseLandmark {
   y: number;
   z: number;
   visibility: number;
+  /** 화면 안에 있을 가능성 (0~1). 관절 찾기 도구가 주지 않으면 비어 있다 */
+  presence?: number;
 }
 
 /** 한 장면에서 선수 한 명의 관절 33개 */

@@ -194,6 +194,18 @@ export class FighterRig {
     }
   }
 
+  /** 끼운 글러브 메시와 붙은 뼈 이름 (겹침 재기용) */
+  gloveMeshes(): { mesh: THREE.Mesh; boneName: string }[] {
+    const out: { mesh: THREE.Mesh; boneName: string }[] = [];
+    for (const g of this.gloves) {
+      const boneName = g.parent?.name ?? "";
+      g.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) out.push({ mesh: o as THREE.Mesh, boneName });
+      });
+    }
+    return out;
+  }
+
   /** 지금 손 크기 배율 (기본 체형 대비 — 키·리치 배율이 손뼈에 쌓인 것) */
   private handScale(side: ArmSide): number {
     return this.bone(`hand_${side}`).getWorldScale(_v1).x / this.fistShape[side].boneScale;
@@ -377,6 +389,12 @@ export class FighterRig {
     target.copy(this.restAnkle[side]);
     target.z += lead ? STANCE.stepM : -STANCE.stepM;
     target.x += side === "l" ? -STANCE.inwardM[side] : STANCE.inwardM[side];
+    // 아주 가까이 붙으면(0.55 m 안) 앞발을 바깥으로 비켜 디뎌 두 선수 앞다리가 부딪히지 않게 한다 (그림용, 최대 8 cm)
+    if (lead) {
+      const d = this.opponentDistance() / this.scale;
+      const k = THREE.MathUtils.clamp((0.55 - d) / 0.2, 0, 1);
+      target.x += (side === "l" ? 1 : -1) * 0.08 * k;
+    }
     target.applyMatrix4(this.fighter.model.matrixWorld);
     target.y -= this.fighter.model.position.y;
     return target;
@@ -493,15 +511,73 @@ export class FighterRig {
     const left = this.left();
     const lead = side === LEAD_SIDE;
     const sideSign = side === "l" ? 1 : -1;
+    // 가까이 붙을수록 손을 제 얼굴 쪽으로 당긴다 (근접전의 좁은 가드 — 두 선수 팔이 서로 파고들지 않게)
+    const k = this.guardTightness();
+    const fwd = THREE.MathUtils.lerp(lead ? 0.24 : 0.14, lead ? 0.06 : 0.05, k);
+    const lat = THREE.MathUtils.lerp(lead ? 0.1 : 0.13, lead ? 0.09 : 0.11, k);
     jaw
-      .addScaledVector(f, (lead ? 0.24 : 0.14) * s)
-      .addScaledVector(left, sideSign * (lead ? 0.1 : 0.13) * s)
+      .addScaledVector(f, fwd * s)
+      .addScaledVector(left, sideSign * lat * s)
       .addScaledVector(_v1.set(0, 1, 0), (lead ? 0.0 : 0.01) * s);
-    if (lowered) jaw.addScaledVector(_v1.set(0, 1, 0), -0.32 * s).addScaledVector(left, sideSign * 0.08 * s).addScaledVector(f, -0.06 * s);
+    if (lowered) {
+      // 내린 가드: 멀면 가슴 앞, 바짝 붙으면 상대 몸이 들어올 자리를 비우려고 손을 몸 옆으로 내린다
+      jaw
+        .addScaledVector(_v1.set(0, 1, 0), -(0.32 + 0.12 * k) * s)
+        .addScaledVector(left, sideSign * (0.08 + 0.12 * k) * s)
+        .addScaledVector(f, -(0.06 + 0.12 * k) * s);
+    }
     // 글러브를 꼈으면 그 두께만큼 얼굴에서 띄운다 (뒷손은 턱 옆이라 옆으로도)
     const t = this.gloveThickness(side);
     jaw.addScaledVector(f, t).addScaledVector(left, lead ? 0 : sideSign * t);
     return jaw;
+  }
+
+  /** 상대 선수 (무대가 정해 준다) — 가까이 붙었는지 보는 데 쓴다 */
+  opponent: FighterRig | null = null;
+
+  /** 두 선수 거리(발 가운데끼리, 수평 m). 상대가 없으면 무한대 */
+  opponentDistance(): number {
+    if (!this.opponent) return Infinity;
+    const a = this.fighter.root.position;
+    const b = this.opponent.fighter.root.position;
+    return Math.hypot(a.x - b.x, a.z - b.z);
+  }
+
+  /** 가드를 최소한 이만큼은 좁힌다 0~1 — 타격 준비에서 두 선수 몸이 겹치면 올린다 (strikePlayer) */
+  guardTightMin = 0;
+
+  /** 가드를 얼마나 좁힐지 0~1 — 0.85 m 이상 떨어지면 0, 0.5 m 이하로 붙으면 1 (그림용, 키에 비례) */
+  private guardTightness(): number {
+    const d = this.opponentDistance() / this.scale;
+    const t = THREE.MathUtils.clamp((0.85 - d) / 0.35, 0, 1);
+    return Math.max(t * t * (3 - 2 * t), this.guardTightMin);
+  }
+
+  /**
+   * 목 잡기(클린치): 두 손을 상대 목 뒤에 건다 — 무릎치기 자세. amount 0~1로 가드에서 목 잡기로 옮겨 간다.
+   * 상대가 없으면 가드 그대로.
+   */
+  clinch(amount: number, skip?: ArmSide) {
+    const opp = this.opponent;
+    if (!opp || amount <= 0) {
+      this.guard(skip);
+      return;
+    }
+    const s = opp.scale;
+    const neck = opp.pos("neck_01");
+    for (const side of ["l", "r"] as const) {
+      if (side === skip) continue;
+      // 내 왼손은 상대의 오른쪽 목(상대 기준 오른쪽 = 상대 left의 반대)으로
+      const sideSign = side === "l" ? -1 : 1;
+      const hold = neck
+        .clone()
+        .addScaledVector(opp.left(), sideSign * 0.07 * s)
+        .addScaledVector(opp.forward(), -0.04 * s)
+        .addScaledVector(_v1.set(0, 1, 0), 0.02 * s);
+      const goal = this.guardPoint(side).lerp(hold, amount);
+      const pole = this.shoulder(side).addScaledVector(_v1.set(0, 1, 0), -1).addScaledVector(this.outward(side), 0.4);
+      this.reachArm(side, goal, pole);
+    }
   }
 
   /** 가드 자세로 팔을 놓는다 (skip에 든 팔은 건너뜀, lowered면 가슴 높이로 내린 가드) */
@@ -611,6 +687,19 @@ export class FighterRig {
     return reached;
   }
 
+  /**
+   * 어깨 내밀기: 쇄골을 돌려 어깨 관절을 앞으로(최대 7 cm)·위로(최대 3 cm) 옮긴다 (amount 0~1, 그림용).
+   * 팔꿈치 치기처럼 어깨를 실어 칠 때 — 몸통끼리 파고들지 않고도 닿게
+   */
+  protractShoulder(side: ArmSide, amount: number) {
+    if (amount <= 0) return;
+    const s = this.scale;
+    const goal = this.shoulder(side)
+      .addScaledVector(this.forward(), 0.07 * s * amount)
+      .addScaledVector(_v1.set(0, 1, 0), 0.03 * s * amount);
+    this.aim(this.bone(`clavicle_${side}`), this.bone(`upperarm_${side}`), goal);
+  }
+
   /** 팔꿈치 끝(뼈 돌출부)이 관절 가운데에서 위팔 방향으로 튀어나온 길이(m, 기본 체형) — 그림용 */
   static readonly ELBOW_TIP_M = 0.05;
 
@@ -621,18 +710,27 @@ export class FighterRig {
     return e.addScaledVector(e.clone().sub(s).normalize(), FighterRig.ELBOW_TIP_M * this.scale);
   }
 
-  /** 팔꿈치 치기: 팔꿈치 끝이 target에 오도록 위팔을 돌리고, 아래팔은 접어 손이 제 귀 옆에 오게 한다 */
+  /**
+   * 팔꿈치 치기: 팔꿈치 끝이 target에 오도록 위팔을 돌리고, 아래팔은 끝까지 접어
+   * 주먹이 제 턱 앞(반대쪽 어깨 쪽)에 오게 한다 — 옆으로 휘두르는 팔꿈치(수평 엘보)의 모양
+   */
   reachElbow(side: ArmSide, target: THREE.Vector3): boolean {
-    const upper = this.armLengths(side).upper;
+    const { upper, lower } = this.armLengths(side);
     const reach = upper + FighterRig.ELBOW_TIP_M * this.scale;
     const s = this.shoulder(side);
     const dir = target.clone().sub(s);
     const reached = dir.length() <= reach * 1.001;
     const elbow = s.clone().addScaledVector(dir.normalize(), upper);
     this.aim(this.bone(`upperarm_${side}`), this.bone(`lowerarm_${side}`), elbow);
-    const ear = this.pos("head").addScaledVector(this.outward(side), 0.08 * this.scale);
-    this.aim(this.bone(`lowerarm_${side}`), this.bone(`hand_${side}`), ear);
-    this.aim(this.bone(`hand_${side}`), this.bone(`middle_01_${side}`), ear.clone().addScaledVector(this.forward(), 0.1));
+    // 손목: 팔꿈치에서 제 턱 앞(조금 반대쪽)으로 아래팔 길이만큼 — 팔꿈치와 같은 높이로 접힌다
+    const chin = this.partWorld("jaw")
+      .addScaledVector(this.forward(), 0.12 * this.scale)
+      .addScaledVector(this.outward(side), -0.06 * this.scale);
+    chin.y = THREE.MathUtils.lerp(chin.y, elbow.y, 0.5);
+    const wrist = elbow.clone().addScaledVector(chin.sub(elbow).normalize(), lower);
+    this.aim(this.bone(`lowerarm_${side}`), this.bone(`hand_${side}`), wrist);
+    // 주먹은 아래팔을 따라 곧게 (손목을 꺾지 않는다)
+    this.aim(this.bone(`hand_${side}`), this.bone(`middle_01_${side}`), wrist.clone().add(wrist.clone().sub(elbow)));
     return reached;
   }
 

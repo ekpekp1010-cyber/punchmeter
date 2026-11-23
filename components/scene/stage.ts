@@ -96,6 +96,8 @@ export class Stage {
   private paused = false;
   /** 준비 시간 동안 옮길 두 선수 거리 */
   private distanceMove: { from: number; to: number } | null = null;
+  /** 두 선수 가드를 좁히는 정도 (마지막 타격에서 정한 값, 0~1) */
+  private idleGuardTight = 0;
   private raf = 0;
   private lastTime = 0;
   private distanceM = DEFAULT_DISTANCE_M;
@@ -206,6 +208,13 @@ export class Stage {
     this.fighters.set(id, fighter);
     // 뼈 장치는 원점·쉬는 자세에서 만든다 (부위 위치 찾기)
     this.rigs.set(id, new FighterRig(fighter, MODELS[MODEL_KEY[sex]]));
+    // 서로 상대를 알려 준다 (가까이 붙으면 가드를 좁히는 데 씀)
+    const a = this.rigs.get("A");
+    const b = this.rigs.get("B");
+    if (a && b) {
+      a.opponent = b;
+      b.opponent = a;
+    }
     this.strike = null;
     this.placeFighters();
     return fighter;
@@ -247,6 +256,7 @@ export class Stage {
    */
   showJointLock(lock: { attacker: FighterId; lock: JointLockId; angleDeg: number; over: boolean } | null) {
     this.jointLock = lock;
+    this.idleGuardTight = 0;
     if (lock) {
       this.strike = null;
       this.queue = [];
@@ -392,7 +402,10 @@ export class Stage {
         if (k >= 1) this.distanceMove = null;
       }
     }
+    // 겹침 막기용 가드 좁히기: 준비 시간 동안 천천히 좁히고, 재생이 끝나도 다음 타격 전까지 유지한다
+    if (s) this.idleGuardTight = s.guardTight * smoothStep(Math.min(1, s.time / s.motion.timing.pre));
     for (const [id, rig] of this.rigs) {
+      rig.guardTightMin = this.idleGuardTight;
       rig.beginFrame();
       if (s && s.request.attacker === id) {
         const reached = poseAttacker(s, rig);

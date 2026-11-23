@@ -7,7 +7,7 @@
 
 import { Vector3 } from "three";
 import type { TechniqueId } from "../types";
-import { bezierPath, extendDistance, extendDuration, linePath, smoothStep, type ArcPath } from "./path";
+import { arcPath, bezierPath, extendDistance, extendDuration, linePath, smoothStep, type ArcPath } from "./path";
 
 /** 때리는 선수 기준의 방향 (월드 좌표, 길이 1) */
 export interface StrikeFrame {
@@ -182,11 +182,36 @@ export const LEAN_BACK_DEG: Record<TechniqueId, number> = {
   calfKick: 8,
   middleKick: 15,
   highKick: 25,
-  frontKick: 12,
-  sideKick: 20,
-  elbow: 0,
+  frontKick: 20, // 엉덩이를 앞으로 밀며 윗몸을 뒤로 (균형)
+  sideKick: 32, // 차는 다리와 몸통이 한 줄이 되도록 상대 반대쪽으로 크게 기울인다
+  elbow: -8, // 음수 = 앞으로 숙임: 팔꿈치는 어깨를 상대 쪽으로 실어 친다 (몸통끼리 덜 붙어도 닿게)
   knee: 10,
 };
+
+/**
+ * 접었다 뻗는 경로: 앞 절반은 start에서 위로 들어 올려 chamber에 이르고(곡선),
+ * 뒤 절반은 chamber에서 target까지 곧게 간다.
+ * 곡선의 조절점은 앞쪽으로 60%, 위로 30% 지점에 둔다 — 발이 처음부터 앞으로 함께 나와
+ * 무릎 아래에 머문다 (위로만 들면 발이 무릎 뒤로 처져 보인다)
+ */
+function chamberPath(start: Vector3, chamber: Vector3, target: Vector3, up: Vector3): ArcPath {
+  const d = chamber.clone().sub(start);
+  const lift = d.dot(up);
+  const horizontal = d.clone().addScaledVector(up, -lift);
+  const control = start.clone().addScaledVector(horizontal, 0.6).addScaledVector(up, 0.3 * lift);
+  return arcPath((u, out) => {
+    if (u < 0.5) {
+      const k = u * 2;
+      const v = 1 - k;
+      return out
+        .copy(start)
+        .multiplyScalar(v * v)
+        .addScaledVector(control, 2 * v * k)
+        .addScaledVector(chamber, k * k);
+    }
+    return out.copy(chamber).lerp(target, (u - 0.5) * 2);
+  });
+}
 
 /** 기술 하나의 끝점 경로 (start = 가드 자세에서의 끝점 위치) */
 export function strikePath(technique: TechniqueId, start: Vector3, target: Vector3, frame: StrikeFrame): ArcPath {
@@ -208,22 +233,16 @@ export function strikePath(technique: TechniqueId, start: Vector3, target: Vecto
         target.clone().addScaledVector(out, 0.5 * D).addScaledVector(f, -0.2 * D),
         target,
       );
-    // 앞차기: 무릎을 들어 올렸다가(접기) 앞으로 곧게 민다
+    // 앞차기·옆차기: 먼저 무릎을 가슴 쪽으로 당겨 발을 목표 높이 가까이 몸 앞에 접고(챔버),
+    // 그다음 목표까지 곧게 뻗는다 (접기 없이 발이 아래에서 휘어 올라가면 어색하다)
     case "frontKick":
-      return bezierPath(
-        start,
-        start.clone().addScaledVector(up, 0.6 * rise + 0.2 * D).addScaledVector(f, 0.1 * D),
-        target.clone().addScaledVector(f, -0.45 * D),
-        target,
-      );
-    // 옆차기: 무릎을 몸 앞으로 접었다가 옆(상대 쪽)으로 곧게 민다
-    case "sideKick":
-      return bezierPath(
-        start,
-        start.clone().addScaledVector(up, 0.6 * rise + 0.2 * D).addScaledVector(out, -0.1 * D),
-        target.clone().addScaledVector(f, -0.5 * D),
-        target,
-      );
+    case "sideKick": {
+      const chamber = start
+        .clone()
+        .addScaledVector(up, 0.85 * rise)
+        .addScaledVector(f, (technique === "frontKick" ? 0.3 : 0.25) * D);
+      return chamberPath(start, chamber, target, up);
+    }
     // 팔꿈치: 옆에서 수평으로 휘둘러 들어온다
     case "elbow":
       return bezierPath(

@@ -23,6 +23,7 @@ import { resolveHitPart } from "@/lib/lab/medical";
 import { bodyPartInfo, techniqueInfo } from "@/lib/reference";
 import type { BodyPart, Defense, FighterId, StrikeSide, TechniqueId } from "@/lib/types";
 import { FighterRig, LEAD_SIDE, type ArmSide } from "./fighterRig";
+import { anyOf, bodyOverlapDepth, limbBones } from "./bodyOverlap";
 
 export interface StrikeRequest {
   attacker: FighterId;
@@ -52,6 +53,8 @@ interface TechSpec {
   minDistanceM: number;
   /** 발끝으로 몸을 들어 올리는 최대 높이(m, 기본 체형 기준) — 하이킥 */
   riseM?: number;
+  /** 디딤발 발끝을 골반이 도는 각도의 몇 배로 돌릴지 (기본 0.8). 옆차기는 뒤꿈치가 상대를 향하도록 더 돌린다 */
+  pivot?: number;
 }
 
 const SPEC: Record<TechniqueId, TechSpec> = {
@@ -63,13 +66,16 @@ const SPEC: Record<TechniqueId, TechSpec> = {
   calfKick: { effector: "shin", reach: { head: 0.95, body: 0.95 }, gapM: 0.05, shinFrac: 0.9, minDistanceM: 0.45 },
   middleKick: { effector: "shin", reach: { head: 0.95, body: 0.95 }, gapM: 0.05, shinFrac: 0.65, minDistanceM: 0.45 },
   highKick: { effector: "shin", reach: { head: 0.97, body: 0.97 }, gapM: 0.05, shinFrac: 0.9, minDistanceM: 0.45, riseM: 0.06 },
-  frontKick: { effector: "foot", reach: { head: 0.94, body: 0.94 }, gapM: 0.06, minDistanceM: 0.45 },
-  sideKick: { effector: "foot", reach: { head: 0.95, body: 0.95 }, gapM: 0.06, minDistanceM: 0.45 },
+  // 앞차기·옆차기는 닿는 순간 다리가 거의 펴진다 (무릎이 덜 펴진 채 닿으면 어색해서 0.94·0.95 → 0.98)
+  frontKick: { effector: "foot", reach: { head: 0.98, body: 0.98 }, gapM: 0.06, minDistanceM: 0.45 },
+  sideKick: { effector: "foot", reach: { head: 0.98, body: 0.98 }, gapM: 0.06, minDistanceM: 0.45, pivot: 1.25 },
   knee: { effector: "knee", reach: { head: 0.99, body: 0.99 }, gapM: 0.05, minDistanceM: 0.3 },
   elbow: { effector: "elbow", reach: { head: 0.99, body: 0.99 }, gapM: 0.02, minDistanceM: 0.3 },
 };
 
 const shinFracOf = (t: TechniqueId) => SPEC[t].shinFrac ?? 0.6;
+/** 두 선수 몸이 이만큼(m)까지 겹치는 것은 그냥 둔다 (살끼리 맞닿는 정도) */
+const OVERLAP_TOLERANCE_M = 0.01;
 /** 실제 길을 기록할 때 나누는 개수 */
 const TRACE_SAMPLES = 160;
 
@@ -103,6 +109,8 @@ export interface ActiveStrike {
   contactDir: THREE.Vector3;
   /** 실제로 닿은 부위 (막았으면 막은 팔다리) */
   hitPart: BodyPart;
+  /** 두 선수 몸이 겹치지 않도록 정한 가드 좁히기 0~1 (재생하는 동안 두 선수에 적용) */
+  guardTight: number;
 }
 
 /** 앞손·앞발이면 왼쪽(오소독스), 뒷손·뒷발이면 오른쪽 */
@@ -172,9 +180,11 @@ function poseBody(rig: FighterRig, technique: TechniqueId, sign: number, u: numb
   rig.setHips(hipTwist, LEAN_BACK_DEG[technique] * u, -HIP_ROLL_DEG[technique] * sign * u);
   rig.setTwist(STRIKE_TWIST_DEG[technique] * sign * u);
   rig.setRise((SPEC[technique].riseM ?? 0) * rig.scale * u);
+  // 팔꿈치는 어깨를 앞으로 내밀며 친다
+  if (technique === "elbow") rig.protractShoulder(kicking, u);
   // 골반을 돌리고 기울인 뒤 발을 다시 서는 자세 자리에 놓는다 (왼발 앞·오른발 뒤 유지).
   // 차는 다리는 poseLimb가 놓고, 디딤발은 골반이 도는 만큼 발끝을 돌린다 (그림용 비율 0.8)
-  if (isLeg) rig.plantFeet(kicking, { side: standing, deg: hipTwist * 0.8 });
+  if (isLeg) rig.plantFeet(kicking, { side: standing, deg: hipTwist * (SPEC[technique].pivot ?? 0.8) });
   else rig.plantFeet();
 }
 
@@ -202,7 +212,8 @@ function poseLimbRaw(rig: FighterRig, technique: TechniqueId, side: ArmSide, goa
       rig.guard(side);
       return rig.reachArm(side, goal, rig.elbowPole(side, technique === "hook" ? u : 0));
     case "elbow":
-      rig.guard(side);
+      // 치지 않는 손은 상대 목을 잡아 당긴다 (근접전에서 머리를 잡고 팔꿈치를 넣는 모양)
+      rig.clinch(smoothStep(Math.min(1, u / 0.5)), side);
       return rig.reachElbow(side, goal);
     case "shin":
       rig.guard();
@@ -211,26 +222,31 @@ function poseLimbRaw(rig: FighterRig, technique: TechniqueId, side: ArmSide, goa
       rig.guard();
       const up = new THREE.Vector3(0, 1, 0);
       if (technique === "frontKick") {
+        // 앞차기: 무릎을 앞·위로 들어 올렸다 뻗고, 발끝을 위로 젖혀 발바닥(앞꿈치)으로 민다
         return rig.reachLeg(side, goal, rig.kneePole(side, 0).add(up.clone().multiplyScalar(0.5)), 1, up);
       }
-      return rig.reachLeg(side, goal, rig.hip(side).add(up), 1, rig.outward(side).negate());
+      // 옆차기: 몸을 옆으로 돌린 쪽(몸 앞)으로 발끝을 두고 살짝 아래로 숙여, 뒤꿈치·발날이 먼저 닿게 한다
+      const toe = rig.outward(side).negate().addScaledVector(up, -0.45).normalize();
+      return rig.reachLeg(side, goal, rig.hip(side).add(up), 1, toe);
     }
     case "knee":
-      rig.guard();
+      // 무릎치기는 두 손으로 상대 목 뒤를 잡고(클린치) 끌어당기며 찬다
+      rig.clinch(smoothStep(Math.min(1, u / 0.5)));
       return rig.reachKnee(side, goal);
   }
 }
 
 /**
  * 맞는 선수 자세 (PLAN 작업 13). beginFrame 뒤에 부른다.
- * - 수비 "맞음": 가드를 가슴 높이로 내려 노린 곳이 보이게 한다
+ * - 수비 "맞음": 머리를 노리면 가드를 가슴 높이로 내려 노린 곳이 보이게 한다.
+ *   몸통·다리를 노리면 가드를 올린 채로 맞는다 (미들킥 등은 가드를 올리고 있어도 몸통에 정타가 들어간다)
  * - "팔로 막음": 노린 쪽 팔을 올려 아래팔로 얼굴 옆·옆구리를 가린다 (머리면 주먹을 노린 곳 앞에, 몸통이면 팔꿈치를 내려 옆구리에)
  * - 로우킥·카프킥을 막으면: 그쪽 무릎을 들어 바깥으로 돌려 정강이로 받는다 (체크)
  */
 export function poseDefenderFor(req: StrikeRequest, defender: FighterRig) {
   defender.setTwist(0);
   if (req.defense === "none") {
-    defender.guard(undefined, true);
+    defender.guard(undefined, bodyPartInfo(req.target).region === "head");
     return;
   }
   const { hitPart } = resolveHitPart({ ...req, speedBasis: "research" });
@@ -248,6 +264,21 @@ export function poseDefenderFor(req: StrikeRequest, defender: FighterRig) {
     return;
   }
   defender.guard(side);
+  if (req.technique === "knee") {
+    // 무릎을 막을 때: 아래팔을 명치 앞으로 내리고 팔꿈치를 앞·아래로 내밀어 무릎을 받는다
+    const hand = defender
+      .partWorld("solarPlexus")
+      .addScaledVector(defender.forward(), 0.12 * s)
+      .addScaledVector(defender.outward(side), 0.02 * s)
+      .addScaledVector(up, 0.06 * s);
+    const kneePole = defender
+      .shoulder(side)
+      .addScaledVector(up, -1)
+      .addScaledVector(defender.outward(side), 0.3)
+      .addScaledVector(defender.forward(), 0.6);
+    defender.reachArm(side, hand, kneePole);
+    return;
+  }
   const head = bodyPartInfo(req.target).region === "head";
   const point = head
     ? defender.partWorld(req.target).addScaledVector(defender.partFrom(req.target), 0.1 * s).addScaledVector(up, 0.04 * s)
@@ -272,6 +303,9 @@ export function prepareStrike(
   const zone = bodyPartInfo(req.target).region === "head" ? "head" : "body";
   // 실제로 닿는 부위: 막으면 아래팔(로우·카프킥은 정강이) — lib/lab/medical.ts와 같은 규칙
   const { hitPart } = resolveHitPart({ ...req, speedBasis: "research" });
+  // 이전 타격에서 좁혀 둔 가드는 풀고 시작한다 (아래 1-2에서 다시 정한다)
+  attacker.guardTightMin = 0;
+  defender.guardTightMin = 0;
 
   const poseDefender = () => {
     defender.beginFrame();
@@ -297,6 +331,44 @@ export function prepareStrike(
     const T = aimPoint();
     const e = defender.fighter.root.position.clone().sub(attacker.fighter.root.position).setY(0).normalize();
     setDistance(Math.max(spec.minDistanceM, getDistance() + distanceShift(root, T, e, length * spec.reach[zone])));
+  }
+
+  // 1-2) 겹침 막기: 닿는 순간 자세에서 두 선수 몸(타격하는 팔·다리 빼고)이 파고들면 그만큼 거리를 벌린다.
+  //      단, 팔다리가 목표에 닿을 수 있는 거리(길이 × 0.995)까지만 — 그 이상 벌리면 타격이 닿지 않는다
+  //      거리로 안 풀리면 두 선수 가드를 좁힌다 (손을 제 얼굴 쪽으로, 내린 손은 몸 옆으로)
+  const limbKind = spec.effector === "fist" || spec.effector === "elbow" ? "arm" : "leg";
+  // 무릎치기·팔꿈치는 손으로 상대 목을 잡으므로(일부러 닿음) 두 팔도 뺀다
+  const ownLimb =
+    spec.effector === "knee" || spec.effector === "elbow"
+      ? anyOf(limbBones("leg", limbSide), limbBones("arm", "l"), limbBones("arm", "r"))
+      : limbBones(limbKind, limbSide);
+  let guardTight = 0;
+  const setGuardTight = (t: number) => {
+    guardTight = t;
+    attacker.guardTightMin = t;
+    defender.guardTightMin = t;
+  };
+  for (let i = 0; i < 8; i++) {
+    poseDefender();
+    const T = aimPoint();
+    attacker.beginFrame();
+    poseBody(attacker, req.technique, twistSign, 1);
+    poseLimb(attacker, req.technique, limbSide, T, 1);
+    const depth = bodyOverlapDepth(attacker, defender, ownLimb);
+    if (depth <= OVERLAP_TOLERANCE_M) break;
+    attacker.beginFrame();
+    poseBody(attacker, req.technique, twistSign, 1);
+    const { root, length } = rootAndLength(attacker, req.technique, limbSide);
+    const e = defender.fighter.root.position.clone().sub(attacker.fighter.root.position).setY(0).normalize();
+    const maxDistance = getDistance() + distanceShift(root, T, e, length * 0.995);
+    const next = Math.min(getDistance() + depth + 0.005, maxDistance);
+    if (next > getDistance() + 0.002) {
+      setDistance(next);
+    } else if (guardTight < 1) {
+      setGuardTight(Math.min(1, guardTight + 0.34)); // 더 벌릴 수 없으면 가드를 좁힌다
+    } else {
+      break; // 할 수 있는 것을 다 했다
+    }
   }
 
   // 2) 가드 자세의 끝점에서 목표까지 경로
@@ -379,6 +451,7 @@ export function prepareStrike(
     contactPoint: actual[TRACE_SAMPLES].clone(),
     contactDir,
     hitPart,
+    guardTight,
   };
 }
 

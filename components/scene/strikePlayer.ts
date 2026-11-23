@@ -165,14 +165,17 @@ function rootAndLength(rig: FighterRig, technique: TechniqueId, side: ArmSide): 
 /** 진행 정도 u(0~1)의 몸통·골반 자세 */
 function poseBody(rig: FighterRig, technique: TechniqueId, sign: number, u: number) {
   const isLeg = ["shin", "foot", "knee"].includes(SPEC[technique].effector);
+  const kicking: ArmSide = sign > 0 ? "r" : "l";
   const standing: ArmSide = sign > 0 ? "l" : "r";
-  // 디딤발 위치를 쉬는 자세에서 기억해 두고, 골반을 돌리고 기울인 뒤 다시 그 자리에 놓는다
-  const planted = isLeg ? rig.pos(`foot_${standing}`) : null;
+  const hipTwist = HIP_TWIST_DEG[technique] * sign * u;
   // 차는 쪽 엉덩이가 올라가게 기울인다 (+각도면 왼쪽이 올라감 → 오른발(sign +)은 −)
-  rig.setHips(HIP_TWIST_DEG[technique] * sign * u, LEAN_BACK_DEG[technique] * u, -HIP_ROLL_DEG[technique] * sign * u);
+  rig.setHips(hipTwist, LEAN_BACK_DEG[technique] * u, -HIP_ROLL_DEG[technique] * sign * u);
   rig.setTwist(STRIKE_TWIST_DEG[technique] * sign * u);
   rig.setRise((SPEC[technique].riseM ?? 0) * rig.scale * u);
-  if (planted) rig.reachLeg(standing, planted, rig.kneePole(standing, 0), 1, rig.forward());
+  // 골반을 돌리고 기울인 뒤 발을 다시 서는 자세 자리에 놓는다 (왼발 앞·오른발 뒤 유지).
+  // 차는 다리는 poseLimb가 놓고, 디딤발은 골반이 도는 만큼 발끝을 돌린다 (그림용 비율 0.8)
+  if (isLeg) rig.plantFeet(kicking, { side: standing, deg: hipTwist * 0.8 });
+  else rig.plantFeet();
 }
 
 /** 끝점을 목표에 놓는 팔다리 자세 (몸통 자세 뒤에 부른다). 닿았는지 돌려준다 */

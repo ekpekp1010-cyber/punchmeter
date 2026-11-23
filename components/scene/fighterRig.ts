@@ -12,11 +12,28 @@ import type { StageFighter } from "./stage";
 
 export type ArmSide = "l" | "r";
 
-/** 오소독스 자세: 왼쪽이 앞손·앞발 */
+/** 오소독스 자세 (두 선수 모두 오른손잡이로 가정): 왼쪽이 앞손·앞발 */
 export const LEAD_SIDE: ArmSide = "l";
 
-/** 기본 자세에서 몸통을 비트는 각도(°, 왼 어깨가 앞으로) — 그림용 */
-const STANCE_TWIST_DEG = -12;
+/**
+ * 서 있는 자세 (오소독스: 왼발 앞, 오른발 뒤) — 모두 그림용 값, 기본 체형(m) 기준.
+ * 매 장면 처음(beginFrame)에 이 자세로 서고, 타격 중에도 차는 발이 아니면 이 자리를 지킨다.
+ */
+const STANCE = {
+  /** 앞발(왼발)을 앞으로, 뒷발(오른발)을 뒤로 옮기는 거리 */
+  stepM: 0.18,
+  /** 발을 몸 가운데 쪽으로 모으는 거리 (쉬는 자세는 두 발이 어깨보다 넓다) */
+  inwardM: { l: 0.06, r: 0.02 } as Record<"l" | "r", number>,
+  /** 무릎을 살짝 굽히려고 몸을 낮추는 높이 */
+  dropM: 0.04,
+  /** 골반 비틀기(°, −면 왼쪽 엉덩이가 앞으로) */
+  hipTwistDeg: -20,
+  /** 발끝 방향(°, 위에서 볼 때 +면 선수 왼쪽으로 돈다): 앞발은 살짝 안쪽, 뒷발은 바깥으로 */
+  toeYawDeg: { l: -15, r: -45 } as Record<"l" | "r", number>,
+};
+
+/** 기본 자세에서 몸통(척추)을 골반보다 더 비트는 각도(°, 왼 어깨가 앞으로) — 그림용 */
+const STANCE_TWIST_DEG = -8;
 /** 목이 몸통 회전을 되돌리는 비율 (얼굴은 상대를 보게) */
 const NECK_COUNTER = 0.7;
 /** 주먹 쥐기 각도(°) — 그림용 */
@@ -41,11 +58,19 @@ export class FighterRig {
   private readonly rest = new Map<THREE.Bone, THREE.Quaternion>();
   private readonly fist = new Map<THREE.Bone, THREE.Quaternion>();
   private readonly anchors = new Map<BodyPart, Anchor>();
+  /** 쉬는 자세의 발목 위치·발목→발볼 방향 (모델 기준 좌표) — 서는 자세의 발 자리를 정한다 */
+  private readonly restAnkle = { l: new THREE.Vector3(), r: new THREE.Vector3() };
+  private readonly restToe = { l: new THREE.Vector3(), r: new THREE.Vector3() };
 
   constructor(fighter: StageFighter, info: ModelInfo) {
     this.fighter = fighter;
     for (const bone of fighter.bones.values()) this.rest.set(bone, bone.quaternion.clone());
     fighter.model.updateMatrixWorld(true);
+    for (const side of ["l", "r"] as const) {
+      fighter.model.worldToLocal(this.pos(`foot_${side}`, this.restAnkle[side]));
+      const ball = fighter.model.worldToLocal(this.pos(`ball_${side}`));
+      this.restToe[side].copy(ball).sub(this.restAnkle[side]);
+    }
     this.findAnchors(info);
     this.assignVertexParts(info);
     // 오른손에서 손가락 굽히는 축을 구하고, 왼손은 좌우 대칭(모델 X축 거울)으로 쓴다.
@@ -189,18 +214,59 @@ export class FighterRig {
 
   // ── 자세 ──
 
-  /** 발끝으로 몸을 들어 올린다(m) — 하이킥. beginFrame이 0으로 되돌린다 */
+  /** 서는 자세에서 몸을 낮춘 높이(월드, m) */
+  private get stanceDrop(): number {
+    return STANCE.dropM * this.scale;
+  }
+
+  /** 발끝으로 몸을 들어 올린다(m) — 하이킥. beginFrame이 서는 자세 높이로 되돌린다 */
   setRise(m: number) {
-    this.fighter.model.position.y = m;
+    this.fighter.model.position.y = -this.stanceDrop + m;
     this.fighter.model.updateMatrixWorld(true);
   }
 
-  /** 모든 뼈를 쉬는 자세로 되돌리고 주먹을 쥔다 (뼈 크기는 그대로) */
+  /**
+   * 모든 뼈를 쉬는 자세로 되돌리고 주먹을 쥔 뒤, 서는 자세(왼발 앞·오른발 뒤, 무릎 살짝 굽힘)로 선다.
+   * 뼈 크기는 그대로 둔다.
+   */
   beginFrame() {
-    this.fighter.model.position.y = 0;
+    this.fighter.model.position.y = -this.stanceDrop;
     for (const [bone, q] of this.rest) bone.quaternion.copy(q);
     for (const [bone, q] of this.fist) bone.quaternion.copy(q);
     this.fighter.model.updateMatrixWorld(true);
+    this.rotateWorld(this.bone("pelvis"), _v1.set(0, 1, 0), THREE.MathUtils.degToRad(STANCE.hipTwistDeg));
+    this.plantFeet();
+  }
+
+  /** 서는 자세의 발목 자리 (월드, 바닥 기준 — 몸을 낮추거나 들어도 그대로) */
+  stanceAnkle(side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    const lead = side === LEAD_SIDE;
+    target.copy(this.restAnkle[side]);
+    target.z += lead ? STANCE.stepM : -STANCE.stepM;
+    target.x += side === "l" ? -STANCE.inwardM[side] : STANCE.inwardM[side];
+    target.applyMatrix4(this.fighter.model.matrixWorld);
+    target.y -= this.fighter.model.position.y;
+    return target;
+  }
+
+  /** 서는 자세의 발끝 방향 (월드). pivotDeg만큼 더 돌린다 (돌려차기 때 디딤발 돌리기) */
+  stanceToe(side: ArmSide, pivotDeg = 0, target = new THREE.Vector3()): THREE.Vector3 {
+    const yaw = THREE.MathUtils.degToRad(STANCE.toeYawDeg[side] + pivotDeg);
+    return target.copy(this.restToe[side]).applyAxisAngle(_v2.set(0, 1, 0), yaw).transformDirection(this.fighter.model.matrixWorld);
+  }
+
+  /**
+   * 두 발을 서는 자세 자리에 놓는다 (골반을 돌리거나 기울인 뒤 다시 불러 발이 미끄러지지 않게).
+   * skip에 든 다리는 건너뛴다 (차는 다리). pivot은 그 발의 발끝을 더 돌린다.
+   */
+  plantFeet(skip?: ArmSide, pivot?: { side: ArmSide; deg: number }) {
+    for (const side of ["l", "r"] as const) {
+      if (side === skip) continue;
+      const toe = this.stanceToe(side, pivot?.side === side ? pivot.deg : 0);
+      // 무릎은 발끝 쪽을 향한다
+      const pole = this.hip(side).add(new THREE.Vector3(toe.x, 0, toe.z).normalize());
+      this.reachLeg(side, this.stanceAnkle(side), pole, 1, toe);
+    }
   }
 
   /** 뼈를 월드 기준으로 axis 축 둘레로 돌린다 */
@@ -217,7 +283,9 @@ export class FighterRig {
     const up = _v1.set(0, 1, 0);
     const total = THREE.MathUtils.degToRad(STANCE_TWIST_DEG + extraDeg);
     this.rotateWorld(this.bone("spine_01"), up, total);
-    this.rotateWorld(this.bone("neck_01"), up, -total * NECK_COUNTER);
+    // 목은 골반의 서는 자세 비틀기까지 함께 되돌려 얼굴이 상대를 보게 한다
+    const neck = total + THREE.MathUtils.degToRad(STANCE.hipTwistDeg);
+    this.rotateWorld(this.bone("neck_01"), up, -neck * NECK_COUNTER);
   }
 
   /** bone을 돌려 child가 point를 향하게 한다 (가장 짧은 회전) */

@@ -344,7 +344,7 @@ export const STRIKE_BENCHMARKS: BenchmarkEntry[] = [
     sourceIds: ["gavagan2017"],
     confidence: "high",
     verifiedPrimary: true,
-    note: "±1.47 m/s. 뻗는 중 최고 속도는 13.24 ± 2.30 m/s, 힘 1400 ± 419 N. praphanbundit2020의 하이킥은 10.89 m/s",
+    note: "±1.47 m/s. 같은 연구의 가라테 5.57 ± 0.80, 태권도 6.36 ± 0.89 m/s (각 8명). 뻗는 중 최고 속도는 13.24 ± 2.30 m/s, 힘 1400 ± 419 N. praphanbundit2020의 하이킥은 10.89 m/s",
   },
   {
     strike: "frontKick",

@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BODY_PARTS,
+  MUSCLE_DENSITY,
   PART_THRESHOLD_PLAN,
   SOURCES,
   STRIKE_BENCHMARKS,
@@ -100,5 +101,13 @@ describe("기술 12가지", () => {
   it("막힘: 로우킥·카프킥은 정강이로, 나머지는 아래팔로 받는다", () => {
     const shin = TECHNIQUES.filter((t) => t.blockedBy === "shin").map((t) => t.id);
     expect(shin.sort()).toEqual(["calfKick", "lowKick"]);
+  });
+});
+
+describe("근밀도", () => {
+  it("모든 선수에 같은 연구값(1.0597 g/cm³)을 쓰고, 출처가 목록에 있다", () => {
+    expect(MUSCLE_DENSITY.value).toBe(1.0597);
+    expect(MUSCLE_DENSITY.unit).toBe("g/cm³");
+    for (const id of MUSCLE_DENSITY.sourceIds) expect(SOURCES[id]).toBeDefined();
   });
 });

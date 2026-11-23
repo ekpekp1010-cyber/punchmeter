@@ -358,4 +358,15 @@ export const SOURCES: Record<string, Source> = {
       "Kennedy EA et al. (2004). Lateral and posterior dynamic bending of the mid-shaft femur. Stapp Car Crash Journal 48:27–51.",
     doi: "10.4271/2004-22-0002",
   },
+  mendezKeys1960: {
+    id: "mendezKeys1960",
+    citation:
+      "Mendez J, Keys A (1960). Density and composition of mammalian muscle. Metabolism 9:184–188. (ward2005 초록의 인용으로만 확인)",
+  },
+  ward2005: {
+    id: "ward2005",
+    citation:
+      "Ward SR, Lieber RL (2005). Density and hydration of fresh and fixed human skeletal muscle. J Biomech 38(11):2317–2320. (초록으로 확인)",
+    url: "https://muscle.ucsd.edu/pubs/2005/jb11-05.shtml",
+  },
 };

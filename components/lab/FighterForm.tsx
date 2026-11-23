@@ -6,6 +6,7 @@ import { useId } from "react";
 import { GLOVE_OPTIONS, type FighterDraft, type FighterErrors } from "@/lib/lab/fighterInput";
 import { MODEL_KEY, bodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import { regainKg } from "@/lib/physics";
+import { MUSCLE_DENSITY } from "@/lib/reference";
 import type { Fighter, GloveOz, Sex } from "@/lib/types";
 import modelsJson from "@/public/models/models.json";
 
@@ -111,6 +112,25 @@ export default function FighterForm({ draft, errors, fighter, onChange }: Props)
         hint={draft.reach.trim() === "" ? "양팔을 벌린 길이. 비워 두면 체형 평균으로 봐요" : undefined}
         onChange={(v) => set({ reach: v })}
       />
+
+      {/* 근밀도: 바꿀 수 없는 고정 칸 (lib/reference/segments.ts MUSCLE_DENSITY) */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="w-14 shrink-0 text-zinc-400">근밀도</span>
+          <output
+            aria-label={`선수 ${draft.id} 근밀도`}
+            className="w-24 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-right tabular-nums text-zinc-300"
+          >
+            {(MUSCLE_DENSITY.value as number).toFixed(2)}
+          </output>
+          <span className="text-zinc-400">{MUSCLE_DENSITY.unit}</span>
+          <span className="rounded bg-zinc-800 px-1.5 text-xs text-zinc-400">고정</span>
+        </div>
+        <p className="pl-16 text-xs text-zinc-500">
+          근육 조직 평균 (연구값, {MUSCLE_DENSITY.sourceIds.join("·")}). UFC 선수만 잰 자료는 없어 모든 선수에 같은
+          값을 써요. 몸무게가 정해져 있으면 팔다리 무게가 그대로라 충격 숫자는 바뀌지 않아요.
+        </p>
+      </div>
 
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-1 text-sm" role="radiogroup" aria-label={`선수 ${draft.id} 글러브`}>

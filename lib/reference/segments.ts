@@ -10,6 +10,8 @@
 //   분절 길이 = 키 × lengthMm / 평균 키 (뼈 길이 환산, 한계 힘 계산)
 //   유효 질량 어림 = 움직이는 분절 무게의 합 (lib/physics/effectiveMass.ts)
 
+import type { RefValue } from "./sources";
+
 export type Segment =
   | "head"
   | "trunk"
@@ -109,3 +111,20 @@ export const SEGMENT_PARAMS: SegmentParam[] = [
 ];
 
 export const SEGMENT_SOURCE_IDS = ["deleva1996"];
+
+/**
+ * 근밀도(근육 조직의 밀도, g/cm³) — 사용자 요청으로 선수 정보에 고정 칸으로 보여 준다.
+ * UFC·격투기 선수만 따로 잰 근밀도 연구는 찾지 못했다 (MMA 연구는 체지방률·제지방량만 있음).
+ * 근육 조직 밀도는 사람마다 거의 같아, 연구에서 널리 쓰는 1.0597 g/cm³(mendezKeys1960)을 모든 선수에 쓴다.
+ * 계산(운동량·에너지·충격력)에는 들어가지 않는다: 분절 무게 = 체중 × 비율이라 체중이 정해지면
+ * 밀도가 달라도 무게가 그대로이기 때문이다.
+ */
+export const MUSCLE_DENSITY: RefValue = {
+  value: 1.0597,
+  unit: "g/cm³",
+  sourceIds: ["mendezKeys1960", "ward2005"],
+  confidence: "medium",
+  verifiedPrimary: false,
+  note:
+    "토끼·개의 신선한 근육에서 잰 값. 사람 근육은 고정액에 따라 1.055~1.112 g/cm³로 잰 기록이 있다 (ward2005). UFC 선수 전용 자료 없음",
+};

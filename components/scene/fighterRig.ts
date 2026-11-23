@@ -23,6 +23,10 @@ export const LEAD_SIDE: ArmSide = "l";
 const STANCE = {
   /** 앞발(왼발)을 앞으로, 뒷발(오른발)을 뒤로 옮기는 거리 */
   stepM: 0.18,
+  /** 근접전(두 선수가 0.35 m 안)에서 앞뒤로 옮기는 거리 — 발을 몸 아래로 모은다 */
+  closeStepM: 0.05,
+  /** 근접전에서 골반 비틀기(°) — 몸을 상대와 좀 더 마주 보게 */
+  closeHipTwistDeg: -10,
   /** 발을 몸 가운데 쪽으로 모으는 거리 (쉬는 자세는 두 발이 어깨보다 넓다) */
   inwardM: { l: 0.06, r: 0.02 } as Record<"l" | "r", number>,
   /** 무릎을 살짝 굽히려고 몸을 낮추는 높이 */
@@ -379,22 +383,34 @@ export class FighterRig {
     for (const [bone, q] of this.rest) bone.quaternion.copy(q);
     for (const [bone, q] of this.fist) bone.quaternion.copy(q);
     this.fighter.model.updateMatrixWorld(true);
-    this.rotateWorld(this.bone("pelvis"), _v1.set(0, 1, 0), THREE.MathUtils.degToRad(STANCE.hipTwistDeg));
+    this.rotateWorld(this.bone("pelvis"), _v1.set(0, 1, 0), THREE.MathUtils.degToRad(this.stanceHipTwist()));
     this.plantFeet();
+  }
+
+  /**
+   * 얼마나 바짝 붙었는지 0~1 — 0.65 m 이상 떨어지면 0, 0.35 m 이하면 1 (그림용, 키에 비례).
+   * 근접전에서는 두 발을 모으고 몸을 좀 더 마주 보게 선다.
+   */
+  private closeness(): number {
+    const d = this.opponentDistance() / this.scale;
+    const t = THREE.MathUtils.clamp((0.65 - d) / 0.3, 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  /** 서는 자세의 골반 비틀기(°) — 근접전이면 덜 비튼다 */
+  private stanceHipTwist(): number {
+    return THREE.MathUtils.lerp(STANCE.hipTwistDeg, STANCE.closeHipTwistDeg, this.closeness());
   }
 
   /** 서는 자세의 발목 자리 (월드, 바닥 기준 — 몸을 낮추거나 들어도 그대로) */
   stanceAnkle(side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
     const lead = side === LEAD_SIDE;
     target.copy(this.restAnkle[side]);
-    target.z += lead ? STANCE.stepM : -STANCE.stepM;
+    // 바짝 붙을수록(근접전) 앞뒤 간격을 줄여 두 발을 몸 아래로 모은다 — 앞발이 상대 발밑까지 뻗어
+    // 다리가 비스듬히 꺾여 보이거나 두 선수 다리가 엇갈리지 않게 (18 cm → 5 cm, 그림용)
+    const step = THREE.MathUtils.lerp(STANCE.stepM, STANCE.closeStepM, this.closeness());
+    target.z += lead ? step : -step;
     target.x += side === "l" ? -STANCE.inwardM[side] : STANCE.inwardM[side];
-    // 아주 가까이 붙으면(0.55 m 안) 앞발을 바깥으로 비켜 디뎌 두 선수 앞다리가 부딪히지 않게 한다 (그림용, 최대 8 cm)
-    if (lead) {
-      const d = this.opponentDistance() / this.scale;
-      const k = THREE.MathUtils.clamp((0.55 - d) / 0.2, 0, 1);
-      target.x += (side === "l" ? 1 : -1) * 0.08 * k;
-    }
     target.applyMatrix4(this.fighter.model.matrixWorld);
     target.y -= this.fighter.model.position.y;
     return target;
@@ -435,7 +451,7 @@ export class FighterRig {
     const total = THREE.MathUtils.degToRad(STANCE_TWIST_DEG + extraDeg);
     this.rotateWorld(this.bone("spine_01"), up, total);
     // 목은 골반의 서는 자세 비틀기까지 함께 되돌려 얼굴이 상대를 보게 한다
-    const neck = total + THREE.MathUtils.degToRad(STANCE.hipTwistDeg);
+    const neck = total + THREE.MathUtils.degToRad(this.stanceHipTwist());
     this.rotateWorld(this.bone("neck_01"), up, -neck * NECK_COUNTER);
   }
 

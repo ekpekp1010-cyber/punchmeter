@@ -334,7 +334,7 @@ export function prepareStrike(
   }
 
   // 1-2) 겹침 막기: 닿는 순간 자세에서 두 선수 몸(타격하는 팔·다리 빼고)이 파고들면 그만큼 거리를 벌린다.
-  //      단, 팔다리가 목표에 닿을 수 있는 거리(길이 × 0.995)까지만 — 그 이상 벌리면 타격이 닿지 않는다
+  //      단, 팔다리가 목표에 닿을 수 있는 거리(길이 × 0.985)까지만 — 그 이상 벌리면 타격이 닿지 않는다
   //      거리로 안 풀리면 두 선수 가드를 좁힌다 (손을 제 얼굴 쪽으로, 내린 손은 몸 옆으로)
   const limbKind = spec.effector === "fist" || spec.effector === "elbow" ? "arm" : "leg";
   // 무릎치기·팔꿈치는 손으로 상대 목을 잡으므로(일부러 닿음) 두 팔도 뺀다
@@ -360,7 +360,8 @@ export function prepareStrike(
     poseBody(attacker, req.technique, twistSign, 1);
     const { root, length } = rootAndLength(attacker, req.technique, limbSide);
     const e = defender.fighter.root.position.clone().sub(attacker.fighter.root.position).setY(0).normalize();
-    const maxDistance = getDistance() + distanceShift(root, T, e, length * 0.995);
+    // 거리가 바뀌면 서는 자세(근접전 발 모으기)도 조금 바뀌므로 닿는 한계에 여유를 둔다 (0.985)
+    const maxDistance = getDistance() + distanceShift(root, T, e, length * 0.985);
     const next = Math.min(getDistance() + depth + 0.005, maxDistance);
     if (next > getDistance() + 0.002) {
       setDistance(next);

@@ -89,14 +89,17 @@ export function makeGlove(fist: FistShape, cuffShape: CuffShape, look: GloveLook
   const sx = 2 * half.x + look.padM + look.frontPadM;
   const sy = 2 * (half.y + look.padM);
   const sz = 2 * (half.z + look.padM);
-  const radius = Math.min(sx, sy, sz) * 0.42;
+  // 모서리를 둥글게 깎되, 얇은 글러브(4oz)는 덜 깎는다 — 많이 깎으면 모서리 쪽 엄지 끝이 밖으로 나온다
+  // (모서리 꼭짓점이 덮이려면 반지름 ≤ 두께 × 2.4 정도여야 함)
+  const radius = Math.min(Math.min(sx, sy, sz) * 0.42, look.padM * 2.4 + 0.008);
   const body = new THREE.Mesh(new RoundedBoxGeometry(sx, sy, sz, 4, radius), material);
   // 치는 면 쪽 두께가 더 두꺼우므로 그만큼 앞으로 민다
   body.position.x = (look.frontPadM - look.padM) / 2;
   body.castShadow = true;
   hand.add(body);
 
-  // ── 손목 띠: 주먹 쪽은 글러브 굵기에서 시작해 팔꿈치 쪽으로 가늘어지고, 끝은 둥글게 말려 팔에 붙는다 ──
+  // ── 손목 띠: 팔뚝보다 조금 굵은 원통. 주먹 쪽 끝은 글러브 몸통 안에 숨기고(밖으로 불룩 나오지 않게),
+  //    팔꿈치 쪽으로 살짝 가늘어지다가 끝은 둥글게 말려 팔에 붙는다 ──
   const cuff = new THREE.Group();
   cuff.name = "glove-cuff";
   cuff.position.copy(cuffShape.center);
@@ -104,14 +107,14 @@ export function makeGlove(fist: FistShape, cuffShape: CuffShape, look: GloveLook
   cuff.scale.setScalar(1 / cuffShape.boneScale);
   const r = Math.max(cuffShape.radiusX, cuffShape.radiusZ);
   const L = look.cuffM;
-  const rGlove = Math.max(r + look.padM, Math.min(half.y, half.z) + look.padM * 0.5); // 주먹 쪽 굵기
+  const rWrist = r + Math.max(0.007, look.padM * 0.6); // 손목 쪽 굵기
   const rEnd = r + Math.max(0.005, look.padM * 0.35); // 팔꿈치 쪽 끝 굵기 (팔보다 조금 두껍게)
-  const profile: THREE.Vector2[] = [new THREE.Vector2(0, -0.035), new THREE.Vector2(rGlove * 0.85, -0.03)];
+  const profile: THREE.Vector2[] = [new THREE.Vector2(0, -0.04), new THREE.Vector2(rWrist * 0.9, -0.038)];
   const steps = 10;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const k = (1 - Math.cos(Math.PI * t)) / 2; // 부드럽게 가늘어지기
-    profile.push(new THREE.Vector2(rGlove + (rEnd - rGlove) * k, -0.005 + (L - 0.015) * t));
+    profile.push(new THREE.Vector2(rWrist + (rEnd - rWrist) * k, -0.032 + (L - 0.012 + 0.032) * t));
   }
   // 끝 테두리: 살짝 부풀었다가 팔 안쪽으로 말려 들어가 끝이 잘려 보이지 않게
   profile.push(

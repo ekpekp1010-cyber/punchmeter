@@ -9,7 +9,7 @@
 // MPFB의 "가장 무거움"도 기본보다 부피가 약 9~14% 크기에 그쳐, 무거운 선수는 변형을 1배보다 세게 쓴다
 // (최대 HEAVY_MAX배). 그래도 모자라면 가장 가까운 모양으로 두고 clamped = true로 알린다.
 
-import type { Fighter, Sex } from "../types";
+import type { BodyPart, Fighter, Sex } from "../types";
 
 /** models.json에 적힌 캐릭터 치수 (scripts/blender/make_fighters.py가 만듦) */
 export interface ModelInfo {
@@ -23,6 +23,8 @@ export interface ModelInfo {
   /** 체형별 몸 부피(L) */
   volumeL: { base: number; light: number; heavy: number; muscular: number };
   morphs: string[];
+  /** 부위 22곳의 표면 위치와 치는 쪽 방향 (모델 기준, 기본 체형·쉬는 자세) */
+  anchors: Record<BodyPart, { pos: [number, number, number]; from: [number, number, number] }>;
 }
 
 export type ModelsJson = Record<"fighter_male" | "fighter_female", ModelInfo>;

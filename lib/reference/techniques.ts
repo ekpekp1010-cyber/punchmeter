@@ -9,8 +9,11 @@
 // 속도는 "닿는 순간(또는 최고) 끝점 속도"다. 연구마다 잰 지점(주먹·발목·발)이 조금씩 달라 note에 적는다.
 
 import type { BodyPart, TechniqueId, TechniqueKind } from "../types";
+import { BODY_PARTS } from "./bodyParts";
 import type { Confidence } from "./sources";
 import type { Segment } from "./segments";
+
+const BODY_PART_SIDE = new Map(BODY_PARTS.map((p) => [p.id, p.side]));
 
 /** 상대에게 닿는 부분 */
 export type ContactSurface = "fist" | "shin" | "foot" | "elbow" | "knee";
@@ -290,4 +293,20 @@ export function techniqueInfo(id: TechniqueId): TechniqueInfo {
 /** 이 기술로 이 부위를 노릴 수 있는가 */
 export function canTarget(id: TechniqueId, part: BodyPart): boolean {
   return techniqueInfo(id).targets.includes(part);
+}
+
+/** 옆에서 휘어 들어오는 기술 — 손발이 들어오는 쪽의 부위만 칠 수 있다 */
+const SIDE_LOCKED: TechniqueId[] = ["hook", "uppercut"];
+
+/**
+ * 앞손·뒷손(앞발·뒷발)으로 이 부위를 칠 수 있는가 (두 선수 모두 오소독스라 가정).
+ * 마주 보면 공격자의 왼쪽(앞손)은 상대의 오른쪽으로, 오른쪽(뒷손)은 상대의 왼쪽으로 들어간다.
+ * 훅·어퍼컷은 몸을 가로질러 반대쪽을 칠 수 없다 (예: 간 = 상대 오른쪽 → 앞손 훅). 가운데 부위는 어느 쪽이든 된다.
+ */
+export function sideCanTarget(id: TechniqueId, side: "lead" | "rear", part: BodyPart): boolean {
+  if (!canTarget(id, part)) return false;
+  if (!SIDE_LOCKED.includes(id)) return true;
+  const partSide = BODY_PART_SIDE.get(part);
+  if (partSide === "center" || partSide === undefined) return true;
+  return side === "lead" ? partSide === "right" : partSide === "left";
 }

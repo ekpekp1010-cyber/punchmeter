@@ -7,11 +7,21 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import modelsJson from "@/public/models/models.json";
-import type { BodyShape, ModelsJson } from "@/lib/motion/bodyShape";
-
-/** 캐릭터 치수 (키·팔 길이·체형별 부피) */
-export const MODELS = modelsJson as ModelsJson;
+import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import type { FighterId, Sex } from "@/lib/types";
+import { FighterRig } from "./fighterRig";
+import { poseAttacker, preparePunch, type ActiveStrike, type PunchRequest } from "./strikePlayer";
+
+/** 캐릭터 치수 (키·팔 길이·체형별 부피·부위 위치) */
+export const MODELS = modelsJson as unknown as ModelsJson;
+
+/** 재생 상태 알림 */
+export interface PlaybackEvents {
+  /** 닿는 순간 (한 번) */
+  onContact?: (strike: ActiveStrike) => void;
+  /** 재생이 끝났을 때 */
+  onEnd?: (strike: ActiveStrike) => void;
+}
 
 /** 성별마다 쓰는 캐릭터 파일 (scripts/blender/make_fighters.py로 만듦, 치수는 models.json) */
 export const MODEL_FILES: Record<Sex, string> = {
@@ -63,6 +73,9 @@ export class Stage {
   private readonly fighters = new Map<FighterId, StageFighter>();
   private readonly frameCallbacks = new Set<FrameCallback>();
   private readonly resizeObserver: ResizeObserver;
+  private readonly rigs = new Map<FighterId, FighterRig>();
+  private strike: ActiveStrike | null = null;
+  private events: PlaybackEvents = {};
   private raf = 0;
   private lastTime = 0;
   private distanceM = DEFAULT_DISTANCE_M;
@@ -159,6 +172,9 @@ export class Stage {
 
     const fighter: StageFighter = { id, sex, root, model, bones, meshes };
     this.fighters.set(id, fighter);
+    // 뼈 장치는 원점·쉬는 자세에서 만든다 (부위 위치 찾기)
+    this.rigs.set(id, new FighterRig(fighter, MODELS[MODEL_KEY[sex]]));
+    this.strike = null;
     this.placeFighters();
     return fighter;
   }
@@ -176,6 +192,7 @@ export class Stage {
   }
 
   private removeFighter(f: StageFighter) {
+    this.rigs.delete(f.id);
     this.scene.remove(f.root);
     f.root.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -215,6 +232,77 @@ export class Stage {
   setDistance(distanceM: number) {
     this.distanceM = distanceM;
     this.placeFighters();
+    for (const f of this.fighters.values()) f.root.updateMatrixWorld(true);
+  }
+
+  getDistance(): number {
+    return this.distanceM;
+  }
+
+  // ── 동작 재생 (PLAN 작업 11) ──
+
+  /** 재생 알림 받기 */
+  setPlaybackEvents(events: PlaybackEvents) {
+    this.events = events;
+  }
+
+  /**
+   * 펀치 재생. rate는 재생 속도 배율 (1 = 원래 속도, 0.25 = 4배 느리게).
+   * 두 선수 거리를 주먹이 닿을 만큼 맞춘 뒤 처음부터 재생한다.
+   */
+  playPunch(req: PunchRequest, rate = 1): ActiveStrike | null {
+    const attacker = this.rigs.get(req.attacker);
+    const defender = this.rigs.get(req.attacker === "A" ? "B" : "A");
+    if (!attacker || !defender) return null;
+    this.strike = preparePunch(
+      req,
+      attacker,
+      defender,
+      () => this.distanceM,
+      (d) => this.setDistance(d),
+      rate,
+    );
+    return this.strike;
+  }
+
+  /** 재생 속도 배율 바꾸기 (재생 중에도) */
+  setRate(rate: number) {
+    if (this.strike) this.strike.rate = rate;
+  }
+
+  /** 지금 재생 중인 타격 */
+  get activeStrike(): ActiveStrike | null {
+    return this.strike;
+  }
+
+  /** 매 장면: 모든 선수를 쉬는 자세로 되돌린 뒤 가드, 재생 중이면 공격자 동작 */
+  private poseFighters(dt: number) {
+    const s = this.strike;
+    if (s) {
+      const before = s.time;
+      s.time = Math.min(s.motion.timing.total, s.time + dt * s.rate);
+      const contactTime = s.motion.timing.contactTime;
+      if (!s.contacted && before <= contactTime && s.time >= contactTime) {
+        s.time = contactTime; // 닿는 장면을 반드시 한 번 그린다
+        s.contacted = true;
+        this.events.onContact?.(s);
+      }
+    }
+    for (const [id, rig] of this.rigs) {
+      rig.beginFrame();
+      if (s && s.request.attacker === id) {
+        const reached = poseAttacker(s, rig);
+        if (s.contacted && s.time === s.motion.timing.contactTime) s.reached = reached;
+      } else {
+        rig.setTwist(0);
+        // 재생 중 맞는 선수: 수비 "맞음"이면 가드를 내려 노린 곳이 보이게 한다
+        rig.guard(undefined, s !== null && s.request.defense === "none");
+      }
+    }
+    if (s && s.time >= s.motion.timing.total) {
+      this.strike = null;
+      this.events.onEnd?.(s);
+    }
   }
 
   private placeFighters() {
@@ -258,6 +346,7 @@ export class Stage {
     const now = nowMs / 1000;
     const dt = this.lastTime === 0 ? 0 : Math.min(0.1, now - this.lastTime);
     this.lastTime = now;
+    this.poseFighters(dt);
     for (const cb of this.frameCallbacks) cb(dt, now);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);

@@ -15,6 +15,8 @@ import sys
 
 import bmesh
 import bpy
+from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 
 from bl_ext.user_default.mpfb.services import (
     ExportService,
@@ -203,6 +205,97 @@ def body_volume_l(basemesh) -> float:
     return volume * 1000
 
 
+# ── 노릴 부위 22곳의 표면 위치 (PLAN 작업 11·13) ──
+# 부위마다 "겨냥점(뼈 기준)"과 "치는 쪽 방향"을 정하고, 그 방향 바깥에서 겨냥점으로 광선을 쏘아 처음 닿는
+# 몸(또는 옷) 표면을 부위 위치로 기록한다. 옆에 내린 팔처럼 다른 부위에 먼저 닿으면 지나쳐 다음 표면을 찾는다.
+# 비율 숫자는 위치를 정하기 위한 그림용 값이다 (계산에 쓰지 않음).
+FRONT = Vector((0, -1, 0))  # Blender에서 캐릭터는 -Y를 바라본다
+BACK = Vector((0, 1, 0))
+UP = Vector((0, 0, 1))
+DOWN = Vector((0, 0, -1))
+LEFT = Vector((1, 0, 0))  # 캐릭터 본인의 왼쪽
+RIGHT = Vector((-1, 0, 0))
+
+HEAD_BONES = {"head", "neck_01"}
+TORSO_BONES = {"spine_01", "spine_02", "spine_03", "pelvis"}
+
+
+def part_specs(rig):
+    """부위 → (겨냥점, 치는 쪽 방향, 허용 뼈)"""
+    b = rig.data.bones
+
+    def p(name):
+        return rig.matrix_world @ b[name].head_local
+
+    def lerp(a, c, t):
+        return a + (c - a) * t
+
+    h0 = p("head")
+    hh = (rig.matrix_world @ b["head"].tail_local - h0).z
+    specs = {
+        "forehead": (h0 + UP * 0.72 * hh, FRONT, HEAD_BONES),
+        "nose": (h0 + UP * 0.42 * hh, FRONT, HEAD_BONES),
+        "jaw": (h0 + UP * 0.08 * hh, (FRONT + DOWN * 0.3).normalized(), HEAD_BONES),
+        "solarPlexus": (p("spine_03"), FRONT, TORSO_BONES),
+        "abdomen": (lerp(p("spine_01"), p("spine_02"), 0.3), FRONT, TORSO_BONES),
+    }
+    for side, out, sfx in (("Left", LEFT, "l"), ("Right", RIGHT, "r")):
+        specs[f"cheek{side}"] = (h0 + UP * 0.38 * hh + out * 0.03, (FRONT + out).normalized(), HEAD_BONES)
+        specs[f"temple{side}"] = (h0 + UP * 0.62 * hh, (out + FRONT * 0.3).normalized(), HEAD_BONES)
+        specs[f"ribs{side}"] = (lerp(p("spine_02"), p("spine_03"), 0.3), (out + FRONT * 0.3).normalized(), TORSO_BONES)
+        specs[f"upperArm{side}"] = (lerp(p(f"upperarm_{sfx}"), p(f"lowerarm_{sfx}"), 0.5), out, {f"upperarm_{sfx}"})
+        specs[f"forearm{side}"] = (lerp(p(f"lowerarm_{sfx}"), p(f"hand_{sfx}"), 0.5), out, {f"lowerarm_{sfx}"})
+        specs[f"thigh{side}"] = (lerp(p(f"thigh_{sfx}"), p(f"calf_{sfx}"), 0.45), out, {f"thigh_{sfx}"})
+        specs[f"calf{side}"] = (lerp(p(f"calf_{sfx}"), p(f"foot_{sfx}"), 0.35), (BACK + out * 0.5).normalized(), {f"calf_{sfx}"})
+        specs[f"shin{side}"] = (lerp(p(f"calf_{sfx}"), p(f"foot_{sfx}"), 0.4), FRONT, {f"calf_{sfx}"})
+    # 간: 오른쪽 아래 갈비 부근, 오른쪽 앞에서
+    specs["liver"] = (lerp(p("spine_01"), p("spine_02"), 0.6) + RIGHT * 0.05, (RIGHT + FRONT * 0.5).normalized(), TORSO_BONES)
+    return specs
+
+
+def main_bone_of(obj, vertex_index, bone_names) -> str | None:
+    names = {g.index: g.name for g in obj.vertex_groups}
+    groups = [g for g in obj.data.vertices[vertex_index].groups if names.get(g.group) in bone_names]
+    if not groups:
+        return None
+    return names[max(groups, key=lambda g: g.weight).group]
+
+
+def find_anchors(rig, meshes, basemesh) -> dict:
+    """부위 22곳의 표면 위치를 glTF 좌표(Y 위, +Z 앞)로 돌려준다"""
+    targets = [o for o in meshes if not any(k in mesh_role(o, basemesh) for k in ("eyebrow", "eyelash", "high-poly"))]
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    trees = [(o, BVHTree.FromObject(o, depsgraph)) for o in targets]
+    bone_names = set(rig.data.bones.keys())
+    anchors = {}
+    for part, (aim, came_from, allowed) in part_specs(rig).items():
+        origin = aim + came_from * 1.0
+        direction = -came_from
+        found = None
+        for _ in range(8):
+            best = None
+            for obj, tree in trees:
+                loc, _normal, face, dist = tree.ray_cast(origin, direction, 3.0)
+                if loc is not None and (best is None or dist < best[3]):
+                    best = (obj, loc, face, dist)
+            if best is None:
+                break
+            obj, loc, face, _ = best
+            vi = min(obj.data.polygons[face].vertices, key=lambda i: (obj.data.vertices[i].co - loc).length)
+            if main_bone_of(obj, vi, bone_names) in allowed:
+                found = loc
+                break
+            origin = loc + direction * 0.002  # 다른 부위(예: 내린 팔)에 닿았으면 그 너머를 다시 찾는다
+        if found is None:
+            print(f"[경고] {part}: 표면을 찾지 못해 겨냥점을 씀")
+            found = aim
+        anchors[part] = {
+            "pos": [round(found.x, 4), round(found.z, 4), round(-found.y, 4)],
+            "from": [round(came_from.x, 4), round(came_from.z, 4), round(-came_from.y, 4)],
+        }
+    return anchors
+
+
 def arm_length_m(rig) -> float:
     """한쪽 팔 길이(m) = 위팔 + 아래팔 + 손목에서 가운뎃손가락 끝까지"""
     bones = rig.data.bones
@@ -258,6 +351,8 @@ def make_fighter(name: str, gender: float, skin: str, clothes: list[str], shorts
             for i, co in enumerate(points):
                 sk.data[i].co = co
 
+    anchors = find_anchors(rig, meshes, basemesh)
+
     fix_materials_for_web()
     if shorts_rgb is not None:
         print(f"[반바지] {name}: 면 {paint_shorts(basemesh, rig, shorts_rgb)}개 칠함")
@@ -304,6 +399,7 @@ def make_fighter(name: str, gender: float, skin: str, clothes: list[str], shorts
         "armLengthM": round(arm_length_m(rig), 4),
         "volumeL": {k: round(v, 3) for k, v in volumes.items()},
         "morphs": [k for k in BODY_VARIANTS if k != "base"],
+        "anchors": anchors,
     }
 
 

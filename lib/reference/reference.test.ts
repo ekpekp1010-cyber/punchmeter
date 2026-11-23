@@ -9,6 +9,7 @@ import {
   STRIKE_BENCHMARKS,
   TECHNIQUES,
   canTarget,
+  sideCanTarget,
   techniqueInfo,
 } from "./index";
 
@@ -85,6 +86,15 @@ describe("기술 12가지", () => {
     expect(techniqueInfo("calfKick").targets).toEqual(["calfLeft", "calfRight"]);
     expect(canTarget("hook", "liver")).toBe(true);
     expect(canTarget("jab", "calfLeft")).toBe(false);
+  });
+
+  it("훅·어퍼컷은 손이 들어오는 쪽만: 간(상대 오른쪽)은 앞손만, 상대 왼 관자놀이는 뒷손만, 턱은 둘 다", () => {
+    expect(sideCanTarget("hook", "lead", "liver")).toBe(true);
+    expect(sideCanTarget("hook", "rear", "liver")).toBe(false);
+    expect(sideCanTarget("hook", "rear", "templeLeft")).toBe(true);
+    expect(sideCanTarget("hook", "lead", "templeLeft")).toBe(false);
+    expect(sideCanTarget("uppercut", "rear", "jaw")).toBe(true);
+    expect(sideCanTarget("cross", "rear", "cheekRight")).toBe(true); // 직선 펀치는 제한 없음
   });
 
   it("막힘: 로우킥·카프킥은 정강이로, 나머지는 아래팔로 받는다", () => {

@@ -7,7 +7,6 @@
 import type { PoseLandmark } from "../types";
 import { segmentParam } from "../physics/body";
 import { LANDMARK as L } from "./landmarks";
-import type { CameraPoint } from "./cameraModel";
 
 /** 이 값 이상이어야 "보이는 관절"로 믿는다 */
 export const RELIABLE_VISIBILITY = 0.5;
@@ -56,10 +55,6 @@ export interface TrackedPerson {
   lostSec: number;
   /** 화면 밖이거나 안 보여서 채워 넣은 관절 번호 */
   estimatedJoints: number[];
-  /** 3D 관절을 카메라 공간(원근 반영)으로 옮길 거리 (m). CameraPlacer가 채운다 */
-  camera?: CameraPoint;
-  /** 영상 구도 따라가기: 관절마다 카메라 공간 위치 (m). CompositionPlacer가 채운다 */
-  cameraJoints?: PoseLandmark[];
 }
 
 interface Vec2 {

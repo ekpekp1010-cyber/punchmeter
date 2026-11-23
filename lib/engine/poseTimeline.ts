@@ -43,11 +43,6 @@ export function lerpPeople(a: TrackedPerson[], b: TrackedPerson[], u: number): T
       ...pb,
       image: lerpList(pa.image, pb.image, u),
       world: lerpList(pa.world, pb.world, u),
-      camera:
-        pa.camera && pb.camera
-          ? { x: lerp(pa.camera.x, pb.camera.x, u), y: lerp(pa.camera.y, pb.camera.y, u), z: lerp(pa.camera.z, pb.camera.z, u) }
-          : pb.camera,
-      cameraJoints: pa.cameraJoints && pb.cameraJoints ? lerpList(pa.cameraJoints, pb.cameraJoints, u) : pb.cameraJoints,
       predicted: u < 0.5 ? pa.predicted : pb.predicted,
     };
   });
@@ -74,6 +69,11 @@ export class PoseTimeline {
     this.samples.push({ t, people, wallMs });
     if (this.samples.length > MAX_SAMPLES) this.samples.shift();
     this.version += 1;
+  }
+
+  /** 가장 최근에 분석한 장면의 영상 속 시각 (없으면 null) */
+  lastTime(): number | null {
+    return this.samples.at(-1)?.t ?? null;
   }
 
   /** 최근 장면 사이의 평균 간격 (영상 속 시간, 초) */

@@ -19,6 +19,7 @@ import {
   type StrikeFrame,
   type StrikeTiming,
 } from "@/lib/motion/strikeMotion";
+import { resolveHitPart } from "@/lib/lab/medical";
 import { bodyPartInfo, techniqueInfo } from "@/lib/reference";
 import type { BodyPart, Defense, FighterId, StrikeSide, TechniqueId } from "@/lib/types";
 import { FighterRig, LEAD_SIDE, type ArmSide } from "./fighterRig";
@@ -195,6 +196,42 @@ function poseLimb(rig: FighterRig, technique: TechniqueId, side: ArmSide, goal: 
   }
 }
 
+/**
+ * 맞는 선수 자세 (PLAN 작업 13). beginFrame 뒤에 부른다.
+ * - 수비 "맞음": 가드를 가슴 높이로 내려 노린 곳이 보이게 한다
+ * - "팔로 막음": 노린 쪽 팔을 올려 아래팔로 얼굴 옆·옆구리를 가린다 (머리면 주먹을 노린 곳 앞에, 몸통이면 팔꿈치를 내려 옆구리에)
+ * - 로우킥·카프킥을 막으면: 그쪽 무릎을 들어 바깥으로 돌려 정강이로 받는다 (체크)
+ */
+export function poseDefenderFor(req: StrikeRequest, defender: FighterRig) {
+  defender.setTwist(0);
+  if (req.defense === "none") {
+    defender.guard(undefined, true);
+    return;
+  }
+  const { hitPart } = resolveHitPart({ ...req, speedBasis: "research" });
+  const side: ArmSide = hitPart.endsWith("Left") ? "l" : "r";
+  const s = defender.scale;
+  const up = new THREE.Vector3(0, 1, 0);
+  if (hitPart.startsWith("shin")) {
+    defender.guard();
+    const knee = defender
+      .hip(side)
+      .addScaledVector(defender.forward(), 0.3 * s)
+      .addScaledVector(defender.outward(side), 0.12 * s)
+      .addScaledVector(up, 0.05 * s);
+    defender.reachKnee(side, knee);
+    return;
+  }
+  defender.guard(side);
+  const head = bodyPartInfo(req.target).region === "head";
+  const point = head
+    ? defender.partWorld(req.target).addScaledVector(defender.partFrom(req.target), 0.1 * s).addScaledVector(up, 0.04 * s)
+    : defender.guardPoint(side).addScaledVector(defender.outward(side), 0.05 * s).addScaledVector(up, -0.02 * s);
+  // 머리를 막을 때는 팔꿈치를 앞·아래로, 몸통을 막을 때는 팔꿈치를 옆구리로 내린다
+  const pole = defender.shoulder(side).addScaledVector(up, -1).addScaledVector(defender.forward(), head ? 0.6 : 0.1);
+  defender.reachArm(side, point, pole);
+}
+
 /** 공격자·방어자 장치와 무대 거리 조절 함수를 받아 타격을 준비한다 */
 export function prepareStrike(
   req: StrikeRequest,
@@ -207,13 +244,19 @@ export function prepareStrike(
   const limbSide = armOf(req.side);
   const twistSign = limbSide === "r" ? 1 : -1;
   const spec = SPEC[req.technique];
-  const lowered = req.defense === "none";
   const zone = bodyPartInfo(req.target).region === "head" ? "head" : "body";
+  // 실제로 닿는 부위: 막으면 아래팔(로우·카프킥은 정강이) — lib/lab/medical.ts와 같은 규칙
+  const { hitPart } = resolveHitPart({ ...req, speedBasis: "research" });
 
   const poseDefender = () => {
     defender.beginFrame();
-    defender.setTwist(0);
-    defender.guard(undefined, lowered);
+    poseDefenderFor(req, defender);
+  };
+  /** 닿을 곳: 막았으면 막은 팔다리 표면에서 공격자 쪽으로 살 두께만큼 */
+  const aimPoint = () => {
+    if (hitPart === req.target) return strikeTarget(defender, req.target, spec.gapM);
+    const toAttacker = attacker.fighter.root.position.clone().sub(defender.fighter.root.position).setY(0).normalize();
+    return defender.partWorld(hitPart).addScaledVector(toAttacker, spec.gapM * defender.scale);
   };
 
   // 1) 거리 맞추기: 닿는 순간 자세(회전 최대)에서 뿌리~목표 = 팔다리 길이 × 비율
@@ -222,14 +265,14 @@ export function prepareStrike(
     poseBody(attacker, req.technique, twistSign, 1);
     poseDefender();
     const { root, length } = rootAndLength(attacker, req.technique, limbSide);
-    const T = strikeTarget(defender, req.target, spec.gapM);
+    const T = aimPoint();
     const e = defender.fighter.root.position.clone().sub(attacker.fighter.root.position).setY(0).normalize();
     setDistance(Math.max(spec.minDistanceM, getDistance() + distanceShift(root, T, e, length * spec.reach[zone])));
   }
 
   // 2) 가드 자세의 끝점에서 목표까지 경로
   poseDefender();
-  const target = strikeTarget(defender, req.target, spec.gapM);
+  const target = aimPoint();
   attacker.beginFrame();
   poseBody(attacker, req.technique, twistSign, 0);
   attacker.guard(); // 가드 자세 (다리는 선 자세)

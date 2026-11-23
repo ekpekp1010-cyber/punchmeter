@@ -10,7 +10,7 @@ import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import type { FighterId, Sex } from "@/lib/types";
 import { FighterRig } from "./fighterRig";
-import { poseAttacker, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
+import { poseAttacker, poseDefenderFor, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
 
 /** 캐릭터 치수 (키·팔 길이·체형별 부피·부위 위치) */
 export const MODELS = modelsJson as unknown as ModelsJson;
@@ -293,10 +293,12 @@ export class Stage {
       if (s && s.request.attacker === id) {
         const reached = poseAttacker(s, rig);
         if (s.contacted && s.time === s.motion.timing.contactTime) s.reached = reached;
+      } else if (s) {
+        // 재생 중 맞는 선수: 수비에 맞춘 자세 (맞음 = 가드 내림, 막음 = 아래팔·정강이로 막기)
+        poseDefenderFor(s.request, rig);
       } else {
         rig.setTwist(0);
-        // 재생 중 맞는 선수: 수비 "맞음"이면 가드를 내려 노린 곳이 보이게 한다
-        rig.guard(undefined, s !== null && s.request.defense === "none");
+        rig.guard();
       }
     }
     if (s && s.time >= s.motion.timing.total) {

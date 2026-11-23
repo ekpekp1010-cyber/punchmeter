@@ -291,7 +291,8 @@ export default function PoseTest() {
         counts = EMPTY_COUNTS();
       }
       lastResultTime = result.mediaTime;
-      for (const contact of detector.push(result.mediaTime, smoothed)) {
+      // 판정에는 떨림을 거르기 전 자세를 쓴다 (거르면 빠른 주먹이 끝까지 닿지 않은 것처럼 보일 수 있음)
+      for (const contact of detector.push(result.mediaTime, tracked)) {
         contacts.push(contact);
         const c = counts[contact.slot];
         if (contact.outcome === "blocked") c.blocked += 1;

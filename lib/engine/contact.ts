@@ -1,12 +1,12 @@
 // Design Ref: §3 데이터 흐름 ⑤ 접촉 판정 — PLAN 작업 10(접촉 판정)의 바탕을 앞당겨 만든다.
 // PRD 원칙: 상대 몸(또는 샌드백·미트)에 닿은 경우만 타격으로 인정한다. 팔·글러브로 막힌 타격은 따로 센다.
 //
-// 한 장면을 판정할 때 바로 앞·뒤 장면을 함께 본다 (그래서 판정은 장면 한 칸 늦게 나온다).
-// 아래 네 가지를 모두 만족해야 "닿음"으로 본다.
-//  1) 빠름: 주먹(손목)·발(발목)이 자기 몸 기준으로 빠르게 움직였다 (스텝·몸 전체 이동은 빠짐)
-//  2) 향함: 그 움직임이 상대 몸 쪽을 향했다
-//  3) 닿음: 주먹·정강이~발이 상대 몸의 테두리(머리·몸통·팔·다리 덩어리)에 닿았다
-//  4) 멈춤: 바로 다음 장면에서 그 방향으로 더 나아가지 못하고 멈추거나 되돌아왔다 (부딪힘)
+// 장면이 들어올 때마다, 그 장면에서 "새로 닿은" 타격을 찾는다. 최근 몇 장면(약 0.13초)을 거꾸로 함께 본다.
+// 아래를 모두 만족해야 "닿음"으로 본다.
+//  1) 닿음: 주먹·정강이~발이 상대 몸의 테두리(머리·몸통·팔·다리 덩어리)에 닿았다
+//  2) 새로: 바로 앞 장면에서는 닿아 있지 않았다 (가드를 붙이고 있거나 붙잡고 있는 것은 빠짐)
+//  3) 다가옴: 최근 몇 장면 사이에 상대 몸 쪽으로 일정 거리 이상 다가왔다 (훅처럼 옆에서 들어와도 됨)
+//  4) 빠름: 그 사이 가장 빠른 순간이 일정 속도 이상이었다. 속도는 자기 몸 기준이라 스텝·카메라 움직임은 빠진다
 // 화면(2D) 기준이라, 앞뒤로 떨어져 있는데 화면에서 겹쳐 보이는 경우는 닿은 것으로 잘못 볼 수 있다.
 
 import type { PoseLandmark } from "../types";
@@ -56,18 +56,26 @@ export const FULL_STRENGTH_SPEED_MPS = STRIKE_BENCHMARKS.find((b) => b.strike ==
   .value as number;
 
 // 아래는 측정값이 아니라 판정용 설정값이다 (실제 영상 시험 후 조정).
-/** 1) 이보다 빨라야 공격으로 본다 (m/s). 가드를 고쳐 잡는 느린 손동작을 빼기 위한 값 */
-export const MIN_STRIKE_SPEED_MPS = 2;
-/** 2) 진행 방향과 "상대 몸 쪽" 방향이 이보다 비슷해야 한다 (코사인, 0.5 = 60° 안쪽) */
-const MIN_APPROACH_COS = 0.5;
+/**
+ * 1) 닿기 전 최근 몇 장면 중 가장 빠른 순간이 이보다 빨라야 공격으로 본다 (m/s).
+ * 닿기 직전에는 이미 느려지고, 카메라 쪽으로 뻗는 펀치는 화면에서 덜 움직여 보이므로 낮게 잡는다.
+ */
+export const MIN_STRIKE_SPEED_MPS = 1.5;
+/** 2) 최근 몇 장면 사이에 상대 몸 쪽으로 이만큼(몸통 길이 비율) 이상 다가왔어야 한다 */
+const MIN_APPROACH_TORSO = 0.15;
 /** 3) 몸 테두리와 이 거리(몸통 길이 비율) 안이면 닿은 것으로 본다 */
-const CONTACT_GAP_TORSO = 0.05;
-/** 4) 다음 장면에서 같은 방향으로 이 비율 넘게 계속 나아가면 닿지 않고 스친 것으로 본다 */
-const MAX_FOLLOW_THROUGH = 0.6;
+const CONTACT_GAP_TORSO = 0.1;
+/** 속도·다가옴을 볼 최근 장면 수 (30fps면 약 0.13초) */
+const LOOKBACK_FRAMES = 4;
 /** 같은 주먹·발의 판정이 이 시간(초) 안에 또 나오면 같은 타격으로 본다 */
 const SAME_STRIKE_SEC = 0.3;
-/** 관절이 이보다 잘 보여야 판정에 쓴다 */
-const MIN_VISIBILITY = 0.5;
+/**
+ * 관절이 이보다 잘 보여야 판정에 쓴다.
+ * 주먹이 상대 얼굴·몸에 닿는 순간에는 서로 겹쳐 잘 안 보이는 것으로 나오기 쉬워 낮게 잡는다.
+ */
+const MIN_VISIBILITY = 0.3;
+/** 상대가 겹쳐서 잠깐 안 보여 예측 자세로 그리는 중이어도, 이 시간(초) 안이면 그 자세로 판정한다 */
+const MAX_OPPONENT_LOST_SEC = 0.3;
 
 /**
  * 몸 덩어리 굵기 (반지름, 몸통 길이 비율). de Leva 1996 분절 길이와 보통 체형을 바탕으로 한 어림값 (판정용 설정값).
@@ -251,7 +259,6 @@ function nearestContact(surface: [P, P], toolRadius: number, shapes: Shape[]): {
   }
   return best;
 }
-
 // ─────────────────────────────────────────────
 // 판정기
 // ─────────────────────────────────────────────
@@ -259,6 +266,16 @@ function nearestContact(surface: [P, P], toolRadius: number, shapes: Shape[]): {
 interface Frame {
   t: number;
   people: TrackedPerson[];
+}
+
+/** 한 장면에서 공격자 주먹·발과 상대 몸 사이의 거리 (몸통 길이 비율). 잴 수 없으면 null */
+interface Reach {
+  gap: number;
+  at: P;
+  region: TargetRegion;
+  joint: P;
+  hip: P;
+  torso: number;
 }
 
 /** 장면을 차례로 넣으면, 상대 몸에 닿은 펀치·킥을 찾아 돌려준다 */
@@ -274,91 +291,97 @@ export class ContactDetector {
   }
 
   /**
-   * 장면 하나를 넣는다. 바로 앞 장면의 판정 결과(닿은 타격)를 돌려준다.
-   * 영상을 뒤로 감으면 처음부터 다시 판정한다.
+   * 장면 하나를 넣고, 그 장면에서 상대 몸에 새로 닿은 타격을 돌려준다.
+   * 떨림을 거르기 전의 자세를 넣어야 빠른 주먹이 덜 깎인다. 영상을 뒤로 감으면 처음부터 다시 판정한다.
    */
   push(t: number, people: TrackedPerson[]): StrikeContact[] {
     const last = this.frames.at(-1);
     if (last && t < last.t) this.reset();
     if (last && t === last.t) this.frames.pop();
     this.frames.push({ t, people });
-    if (this.frames.length > 3) this.frames.shift();
-    if (this.frames.length < 3) return [];
-    const [prev, cur, next] = this.frames;
-    return this.judge(prev, cur, next);
+    if (this.frames.length > LOOKBACK_FRAMES + 1) this.frames.shift();
+    if (this.frames.length < 2) return [];
+    return this.judge();
   }
 
-  private judge(prev: Frame, cur: Frame, next: Frame): StrikeContact[] {
-    const dtIn = cur.t - prev.t;
-    const dtOut = next.t - cur.t;
-    if (dtIn <= 0 || dtOut <= 0) return [];
+  /** 공격자의 주먹·발(tool)과 상대 몸 사이 거리 */
+  private reach(frame: Frame, slot: number, tool: StrikeTool): Reach | null {
+    const attacker = frame.people.find((p) => p.slot === slot);
+    const opponent = frame.people.find((p) => p.slot !== slot);
+    if (!attacker || !opponent || attacker.predicted) return null;
+    if (opponent.predicted && opponent.lostSec > MAX_OPPONENT_LOST_SEC) return null;
+    const a = readBody(attacker, this.aspect);
+    const b = readBody(opponent, this.aspect);
+    if (!a || !b || !a.ok(tool.joint)) return null;
+    const surface = tool.surface(a);
+    const shapes = bodyShapes(b);
+    if (!surface || shapes.length === 0) return null;
+    const near = nearestContact(surface, tool.radius * a.torso, shapes);
+    if (!near) return null;
+    return { gap: near.d / a.torso, at: near.at, region: near.region, joint: a.pt(tool.joint), hip: a.hip, torso: a.torso };
+  }
+
+  private judge(): StrikeContact[] {
+    const cur = this.frames.at(-1)!;
     const found: StrikeContact[] = [];
-
     for (const attacker of cur.people) {
-      const opponent = cur.people.find((p) => p.slot !== attacker.slot);
-      const aPrev = prev.people.find((p) => p.slot === attacker.slot);
-      const aNext = next.people.find((p) => p.slot === attacker.slot);
-      // 두 선수 모두 이번 장면에서 실제로 찾았어야 판정한다 (예측으로 그린 자세는 쓰지 않음)
-      if (!opponent || !aPrev || !aNext || attacker.predicted || opponent.predicted || aPrev.predicted || aNext.predicted) continue;
-      const bCur = readBody(attacker, this.aspect);
-      const bPrev = readBody(aPrev, this.aspect);
-      const bNext = readBody(aNext, this.aspect);
-      const target = readBody(opponent, this.aspect);
-      if (!bCur || !bPrev || !bNext || !target) continue;
-      const shapes = bodyShapes(target);
-      if (shapes.length === 0) continue;
-      const metersPerUnit = TRUNK_LENGTH_M / bCur.torso;
-
       for (const tool of STRIKE_TOOLS) {
-        const j = tool.joint;
-        if (!bCur.ok(j) || !bPrev.ok(j) || !bNext.ok(j)) continue;
-        // 1) 빠름: 자기 몸(엉덩이 가운데) 기준 속도
-        const vIn = {
-          x: (bCur.pt(j).x - bPrev.pt(j).x - (bCur.hip.x - bPrev.hip.x)) / dtIn,
-          y: (bCur.pt(j).y - bPrev.pt(j).y - (bCur.hip.y - bPrev.hip.y)) / dtIn,
-        };
-        const speedIn = norm(vIn);
-        const speedMps = speedIn * metersPerUnit;
-        if (speedMps < MIN_STRIKE_SPEED_MPS) continue;
-        const dir = { x: vIn.x / speedIn, y: vIn.y / speedIn };
+        // 3) 닿음: 이번 장면에서 상대 몸 테두리에 닿았다
+        const now = this.reach(cur, attacker.slot, tool);
+        if (!now || now.gap > CONTACT_GAP_TORSO) continue;
+        // 바로 앞 장면에서 이미 닿아 있었으면 새 타격이 아니다 (가드를 상대에게 붙이고 있거나 클린치)
+        const before = this.reach(this.frames.at(-2)!, attacker.slot, tool);
+        if (before && before.gap <= CONTACT_GAP_TORSO) continue;
 
-        // 3) 닿음: 때리는 면이 상대 몸 테두리에 닿았나
-        const surface = tool.surface(bCur);
-        if (!surface) continue;
-        const contact = nearestContact(surface, tool.radius * bCur.torso, shapes);
-        if (!contact || contact.d > CONTACT_GAP_TORSO * bCur.torso) continue;
-
-        // 2) 향함: 직전 위치에서 닿은 곳 쪽으로 움직였나
-        const toTarget = sub(contact.at, bPrev.pt(j));
-        const toTargetLen = norm(toTarget);
-        if (toTargetLen > 0 && dot(dir, toTarget) / toTargetLen < MIN_APPROACH_COS) continue;
-
-        // 4) 멈춤: 다음 장면에서 같은 방향으로 계속 크게 나아가면 스친 것
-        const vOut = {
-          x: (bNext.pt(j).x - bCur.pt(j).x - (bNext.hip.x - bCur.hip.x)) / dtOut,
-          y: (bNext.pt(j).y - bCur.pt(j).y - (bNext.hip.y - bCur.hip.y)) / dtOut,
-        };
-        if (dot(vOut, dir) > MAX_FOLLOW_THROUGH * speedIn) continue;
+        // 최근 장면들을 거꾸로 보며 1) 가장 빠른 순간과 2) 얼마나 다가왔는지 구한다
+        let maxSpeedMps = 0;
+        let farthestGap = now.gap;
+        let dir: P | null = null;
+        let later = now;
+        let laterT = cur.t;
+        for (let k = this.frames.length - 2; k >= 0; k--) {
+          const f = this.frames[k];
+          const r = this.reach(f, attacker.slot, tool);
+          if (!r) break;
+          const dt = laterT - f.t;
+          if (dt <= 0) break;
+          // 자기 몸(엉덩이 가운데) 기준 속도: 스텝·몸 전체 이동·카메라 움직임은 빠진다
+          const v = {
+            x: (later.joint.x - r.joint.x - (later.hip.x - r.hip.x)) / dt,
+            y: (later.joint.y - r.joint.y - (later.hip.y - r.hip.y)) / dt,
+          };
+          const speed = norm(v) * (TRUNK_LENGTH_M / later.torso);
+          if (speed > maxSpeedMps) maxSpeedMps = speed;
+          // 화살표 방향: 닿기 직전 두 칸의 평균 움직임
+          if (k >= this.frames.length - 3) dir = dir ? { x: dir.x + v.x, y: dir.y + v.y } : v;
+          farthestGap = Math.max(farthestGap, r.gap);
+          later = r;
+          laterT = f.t;
+        }
+        if (maxSpeedMps < MIN_STRIKE_SPEED_MPS) continue;
+        if (farthestGap - now.gap < MIN_APPROACH_TORSO) continue;
+        if (!dir || norm(dir) === 0) continue;
 
         // 같은 타격이 연달아 판정되면 하나로
-        const key = `${attacker.slot}-${j}`;
+        const key = `${attacker.slot}-${tool.joint}`;
         const lastT = this.lastHit.get(key);
         if (lastT !== undefined && cur.t - lastT < SAME_STRIKE_SEC) continue;
         this.lastHit.set(key, cur.t);
 
-        const p = attacker.image[j];
+        const p = attacker.image[tool.joint];
+        const len = norm(dir);
         found.push({
           slot: attacker.slot,
           limb: tool.limb,
-          joint: j,
+          joint: tool.joint,
           t: cur.t,
           x: p.x,
           y: p.y,
-          dirX: dir.x,
-          dirY: dir.y,
-          strength: Math.min(1, speedMps / FULL_STRENGTH_SPEED_MPS),
-          region: contact.region,
-          outcome: contact.region === "arm" ? "blocked" : "hit",
+          dirX: dir.x / len,
+          dirY: dir.y / len,
+          strength: Math.min(1, maxSpeedMps / FULL_STRENGTH_SPEED_MPS),
+          region: now.region,
+          outcome: now.region === "arm" ? "blocked" : "hit",
         });
       }
     }

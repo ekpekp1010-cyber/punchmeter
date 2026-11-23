@@ -47,6 +47,7 @@ export class FighterRig {
     for (const bone of fighter.bones.values()) this.rest.set(bone, bone.quaternion.clone());
     fighter.model.updateMatrixWorld(true);
     this.findAnchors(info);
+    this.assignVertexParts(info);
     // 오른손에서 손가락 굽히는 축을 구하고, 왼손은 좌우 대칭(모델 X축 거울)으로 쓴다.
     // 회전축은 거울에 비치면 (x, y, z) → (x, −y, −z)가 된다. 이때 선수는 원점에서 회전 없이 서 있다.
     const rightAxis = this.fistAxis("r");
@@ -85,6 +86,66 @@ export class FighterRig {
         }
       }
       if (best) this.anchors.set(part, { mesh: best.mesh, index: best.index, from: new THREE.Vector3(...a.from) });
+    }
+  }
+
+  // ── 부위 색칠 (PLAN 작업 18) ──
+  // 캐릭터 표면의 점마다 가장 가까운 부위 위치(쉬는 자세, 모델 좌표)를 찾아 그 부위에 배정한다.
+  // 어느 부위에서도 PART_RADIUS_M보다 멀면(손·발·등 일부 등) 칠하지 않는다.
+
+  /** 부위 하나가 칠해지는 반경(m, 모델 기준) — 그림용 */
+  static readonly PART_RADIUS_M = 0.13;
+  private readonly partOfVertex = new Map<THREE.SkinnedMesh, Int8Array>();
+  private readonly partList: BodyPart[] = [];
+
+  private assignVertexParts(info: ModelInfo) {
+    const model = this.fighter.model;
+    const anchors = Object.entries(info.anchors) as [BodyPart, ModelInfo["anchors"][BodyPart]][];
+    this.partList.push(...anchors.map(([p]) => p));
+    const points = anchors.map(([, a]) => new THREE.Vector3(...a.pos));
+    const r2 = FighterRig.PART_RADIUS_M ** 2;
+    const p = new THREE.Vector3();
+    for (const mesh of this.fighter.meshes) {
+      if (/eyebrow|eyelash|high-poly/i.test(mesh.name)) continue;
+      const count = mesh.geometry.getAttribute("position").count;
+      const parts = new Int8Array(count).fill(-1);
+      for (let i = 0; i < count; i++) {
+        mesh.getVertexPosition(i, p);
+        model.worldToLocal(mesh.localToWorld(p));
+        let best = -1;
+        let bestD = r2;
+        for (let k = 0; k < points.length; k++) {
+          const d = p.distanceToSquared(points[k]);
+          if (d < bestD) {
+            bestD = d;
+            best = k;
+          }
+        }
+        parts[i] = best;
+      }
+      this.partOfVertex.set(mesh, parts);
+      // 정점 색(기본 흰색 = 원래 피부색)을 곱해 칠한다
+      mesh.geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(count * 3).fill(1), 3));
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of materials) {
+        (m as THREE.MeshStandardMaterial).vertexColors = true;
+        m.needsUpdate = true;
+      }
+    }
+  }
+
+  /** 부위별 색 칠하기. 목록에 없는 부위는 원래 색(흰색 곱) */
+  setPartColors(colors: Partial<Record<BodyPart, THREE.Color>>) {
+    for (const [mesh, parts] of this.partOfVertex) {
+      const attr = mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+      const arr = attr.array as Float32Array;
+      for (let i = 0; i < parts.length; i++) {
+        const c = parts[i] >= 0 ? colors[this.partList[parts[i]]] : undefined;
+        arr[i * 3] = c ? c.r : 1;
+        arr[i * 3 + 1] = c ? c.g : 1;
+        arr[i * 3 + 2] = c ? c.b : 1;
+      }
+      attr.needsUpdate = true;
     }
   }
 

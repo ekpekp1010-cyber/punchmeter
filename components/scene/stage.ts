@@ -9,7 +9,8 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import { smoothStep } from "@/lib/motion/path";
-import type { FighterId, Sex } from "@/lib/types";
+import type { BodyPart, FighterId, PartLoad, Sex } from "@/lib/types";
+import { colorOfStep } from "./loadColors";
 import { ArrowLayer } from "./arrows";
 import { FighterRig } from "./fighterRig";
 import { poseAttacker, poseDefenderFor, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
@@ -173,6 +174,9 @@ export class Stage {
         const mesh = o as THREE.SkinnedMesh;
         mesh.castShadow = true;
         mesh.frustumCulled = false; // 동작 중 팔다리가 원래 경계 밖으로 나가도 사라지지 않게
+        // 부위 색칠(PLAN 작업 18)은 선수마다 따로 해야 하므로 모양·재질을 복사해 같은 성별 두 선수가 나눠 쓰지 않게 한다
+        mesh.geometry = mesh.geometry.clone();
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone();
         meshes.push(mesh);
       }
     });
@@ -209,7 +213,8 @@ export class Stage {
     this.scene.remove(f.root);
     f.root.traverse((o) => {
       const mesh = o as THREE.Mesh;
-      if (mesh.isMesh && mesh.name === "ring") {
+      // 발밑 고리와, 선수마다 복사한 캐릭터 모양·재질을 메모리에서 지운다 (그림·텍스처 원본은 다른 선수와 함께 쓰므로 두고)
+      if (mesh.isMesh) {
         mesh.geometry.dispose();
         (mesh.material as THREE.Material).dispose();
       }
@@ -219,6 +224,18 @@ export class Stage {
 
   getFighter(id: FighterId): StageFighter | undefined {
     return this.fighters.get(id);
+  }
+
+  /** 부위별 누적 충격 색 칠하기 (PLAN 작업 18). 계산은 lib/lab/accumulate.ts가 한다 */
+  setPartLoads(id: FighterId, loads: PartLoad[]) {
+    const rig = this.rigs.get(id);
+    if (!rig) return;
+    const colors: Partial<Record<BodyPart, THREE.Color>> = {};
+    for (const l of loads) {
+      const c = colorOfStep(l.colorStep);
+      if (c) colors[l.part] = new THREE.Color(c);
+    }
+    rig.setPartColors(colors);
   }
 
   /**

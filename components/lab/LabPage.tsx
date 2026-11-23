@@ -4,17 +4,18 @@
 // 입력이 범위를 벗어나면 안내를 보이고, 3D는 마지막으로 올바랐던 값을 유지한다.
 // 계산(lib/lab)은 재생 버튼을 누를 때 한 번에 끝내고, 3D는 그 결과를 따라 재생만 한다.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ComboList from "@/components/lab/ComboList";
 import FighterForm from "@/components/lab/FighterForm";
+import Legend from "@/components/lab/Legend";
 import ResultPanel from "@/components/lab/ResultPanel";
 import StrikePicker, { PLAYABLE, checkSpeed, type StrikeDraft } from "@/components/lab/StrikePicker";
 import PlaybackBar, { type Rate } from "@/components/scene/PlaybackBar";
 import Stage3D from "@/components/scene/Stage3D";
 import type { Stage } from "@/components/scene/stage";
-import { buildStrikeResult } from "@/lib/lab";
+import { accumulateLoads, buildStrikeResult } from "@/lib/lab";
 import { checkFighter, toDraft, type FighterCheck, type FighterDraft } from "@/lib/lab/fighterInput";
-import type { Fighter, FighterId, StrikeResult, StrikeStep } from "@/lib/types";
+import type { Fighter, FighterId, PartLoad, StrikeResult, StrikeStep } from "@/lib/types";
 
 /** 처음 기술 칸 값 */
 const INITIAL_STRIKE: StrikeDraft = {
@@ -93,6 +94,8 @@ export default function LabPage() {
   const [results, setResults] = useState<StrikeResult[]>([]);
   const [selected, setSelected] = useState(0);
   const [hasPlayed, setHasPlayed] = useState(false);
+  /** 재생할 때의 선수 정보 (누적 계산은 이 값으로) */
+  const [playedFighters, setPlayedFighters] = useState<Record<FighterId, Fighter> | null>(null);
   const stageRef = useRef<Stage | null>(null);
 
   const onStageReady = useCallback((stage: Stage) => {
@@ -124,6 +127,7 @@ export default function LabPage() {
     setSelected(0);
     setPlayback({ ...IDLE, playing: true, current: 0 });
     setHasPlayed(true);
+    setPlayedFighters(fighters);
     stage.playSequence(
       steps.map((st) => ({ attacker: st.attacker, technique: st.technique, side: st.side, target: st.target, speedMps: st.speedMps, defense: st.defense })),
       rate,
@@ -145,6 +149,24 @@ export default function LabPage() {
     setRate(r);
     stageRef.current?.setRate(r);
   };
+
+  // 지금까지 닿은 타격으로 두 선수의 22곳 누적 충격 (PLAN 작업 18) — 리게인 기준 충격력
+  const shownCount = playback.playing ? playback.contacted : results.length;
+  const loads = useMemo<Record<FighterId, PartLoad[]>>(() => {
+    const f = playedFighters ?? { A: state.A.lastValid, B: state.B.lastValid };
+    const hits = results.slice(0, shownCount).map((r) => ({
+      defender: (r.step.attacker === "A" ? "B" : "A") as FighterId,
+      hitPart: r.hitPart,
+      forceN: r.force.regain.value ?? 0,
+    }));
+    return { A: accumulateLoads(hits, f.A), B: accumulateLoads(hits, f.B) };
+  }, [results, shownCount, playedFighters, state.A.lastValid, state.B.lastValid]);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.setPartLoads("A", loads.A);
+    stage.setPartLoads("B", loads.B);
+  }, [loads]);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
@@ -198,7 +220,8 @@ export default function LabPage() {
                 : `재생 중… ${steps.length > 1 ? `${playback.current + 1}/${steps.length}` : ""}`
               : "마우스로 끌어 시점을 돌리고, 휠로 확대·축소해요."}
           </p>
-          <ResultPanel results={results} contactedCount={playback.playing ? playback.contacted : results.length} selected={selected} onSelect={setSelected} />
+          <ResultPanel results={results} contactedCount={shownCount} selected={selected} onSelect={setSelected} />
+          <Legend loads={loads} />
         </section>
       </main>
     </div>

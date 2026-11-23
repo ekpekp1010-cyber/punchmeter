@@ -28,6 +28,12 @@ export interface RefValue {
 }
 
 export const SOURCES: Record<string, Source> = {
+  deleva1996: {
+    id: "deleva1996",
+    citation:
+      "de Leva P (1996). Adjustments to Zatsiorsky-Seluyanov's segment inertia parameters. J Biomech 29(9):1223–1230.",
+    doi: "10.1016/0021-9290(95)00178-6",
+  },
   walilko2005: {
     id: "walilko2005",
     citation:

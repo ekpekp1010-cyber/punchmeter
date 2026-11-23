@@ -13,20 +13,29 @@ export const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 export const POSE_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task";
 
-/** 손목·발목 관절 번호 (MediaPipe 33개 관절 중) */
+/** 자주 쓰는 관절 번호 (MediaPipe 33개 관절 중. left/right는 선수 본인 기준) */
 export const LANDMARK = {
+  nose: 0,
+  leftEar: 7,
+  rightEar: 8,
   leftShoulder: 11,
   rightShoulder: 12,
   leftElbow: 13,
   rightElbow: 14,
   leftWrist: 15,
   rightWrist: 16,
+  leftPinky: 17,
+  rightPinky: 18,
+  leftIndex: 19,
+  rightIndex: 20,
   leftHip: 23,
   rightHip: 24,
   leftKnee: 25,
   rightKnee: 26,
   leftAnkle: 27,
   rightAnkle: 28,
+  leftFootIndex: 31,
+  rightFootIndex: 32,
 } as const;
 
 /**

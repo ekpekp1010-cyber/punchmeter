@@ -276,7 +276,8 @@ export const TECHNIQUES: TechniqueInfo[] = [
       note: "무에타이 클럽 선수 훈련 전 7.8 / 훈련 뒤 11.0 m/s. 숫자가 서로 맞지 않는 곳이 있어 믿음 낮음",
     },
     effectiveMass: { basis: "segmentEstimate", segments: ["thigh", "shank", "foot"], note: "무릎 유효 질량 자료 없음" },
-    targets: ["jaw", "nose", "solarPlexus", "abdomen", "liver", "ribsLeft", "ribsRight", "thighLeft", "thighRight"],
+    // 턱·코 무릎은 클린치로 상대 머리를 당겨 내려야 해서, 두 선수가 선 채로 재생하는 이 앱에서는 다루지 않는다
+    targets: ["solarPlexus", "abdomen", "liver", "ribsLeft", "ribsRight", "thighLeft", "thighRight"],
     blockedBy: "forearm",
   },
 ];
@@ -295,8 +296,8 @@ export function canTarget(id: TechniqueId, part: BodyPart): boolean {
   return techniqueInfo(id).targets.includes(part);
 }
 
-/** 옆에서 휘어 들어오는 기술 — 손발이 들어오는 쪽의 부위만 칠 수 있다 */
-const SIDE_LOCKED: TechniqueId[] = ["hook", "uppercut"];
+/** 옆에서 휘어 들어오는 기술 — 손발이 들어오는 쪽의 부위만 칠 수 있다 (예: 뒷발 로우킥 → 상대 왼 허벅지 바깥) */
+const SIDE_LOCKED: TechniqueId[] = ["hook", "uppercut", "lowKick", "calfKick", "middleKick", "highKick", "elbow", "knee"];
 
 /**
  * 앞손·뒷손(앞발·뒷발)으로 이 부위를 칠 수 있는가 (두 선수 모두 오소독스라 가정).

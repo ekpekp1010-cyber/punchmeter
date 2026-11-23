@@ -10,7 +10,7 @@ import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import type { FighterId, Sex } from "@/lib/types";
 import { FighterRig } from "./fighterRig";
-import { poseAttacker, preparePunch, type ActiveStrike, type PunchRequest } from "./strikePlayer";
+import { poseAttacker, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
 
 /** 캐릭터 치수 (키·팔 길이·체형별 부피·부위 위치) */
 export const MODELS = modelsJson as unknown as ModelsJson;
@@ -247,14 +247,14 @@ export class Stage {
   }
 
   /**
-   * 펀치 재생. rate는 재생 속도 배율 (1 = 원래 속도, 0.25 = 4배 느리게).
-   * 두 선수 거리를 주먹이 닿을 만큼 맞춘 뒤 처음부터 재생한다.
+   * 타격 재생 (펀치·킥·팔꿈치·무릎). rate는 재생 속도 배율 (1 = 원래 속도, 0.25 = 4배 느리게).
+   * 두 선수 거리를 끝점이 닿을 만큼 맞춘 뒤 처음부터 재생한다.
    */
-  playPunch(req: PunchRequest, rate = 1): ActiveStrike | null {
+  playStrike(req: StrikeRequest, rate = 1): ActiveStrike | null {
     const attacker = this.rigs.get(req.attacker);
     const defender = this.rigs.get(req.attacker === "A" ? "B" : "A");
     if (!attacker || !defender) return null;
-    this.strike = preparePunch(
+    this.strike = prepareStrike(
       req,
       attacker,
       defender,

@@ -8,7 +8,6 @@ import FighterForm from "@/components/lab/FighterForm";
 import StrikePicker, { PLAYABLE, checkSpeed, type StrikeDraft } from "@/components/lab/StrikePicker";
 import Stage3D from "@/components/scene/Stage3D";
 import type { Stage } from "@/components/scene/stage";
-import type { PunchId } from "@/lib/motion/strikeMotion";
 import { checkFighter, toDraft, type FighterCheck, type FighterDraft } from "@/lib/lab/fighterInput";
 import type { Fighter, FighterId } from "@/lib/types";
 
@@ -78,10 +77,10 @@ export default function LabPage() {
   const onPlay = () => {
     const stage = stageRef.current;
     if (!stage || !canPlay || speed.speedMps === null) return;
-    const started = stage.playPunch(
+    const started = stage.playStrike(
       {
         attacker: strike.attacker,
-        technique: strike.technique as PunchId,
+        technique: strike.technique,
         side: strike.side,
         target: strike.target,
         speedMps: speed.speedMps,
@@ -122,8 +121,8 @@ export default function LabPage() {
               <p className="text-xs text-zinc-400" role="status">
                 {play.contacted
                   ? play.reached
-                    ? "닿음 — 닿는 순간 주먹 속도가 정한 속도와 같아요"
-                    : "주먹이 노린 곳까지 다 닿지 못했어요"
+                    ? "닿음 — 닿는 순간 끝점(주먹·발·무릎·팔꿈치) 속도가 정한 속도와 같아요"
+                    : "노린 곳까지 다 닿지 못했어요 — 두 선수 키 차이가 커서 몸이 겹치지 않는 거리에서는 닿지 않아요 (숫자 계산에는 영향 없음)"
                   : "재생 중…"}
               </p>
             )}

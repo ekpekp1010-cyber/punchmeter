@@ -128,8 +128,15 @@ export class FighterRig {
 
   // ── 자세 ──
 
+  /** 발끝으로 몸을 들어 올린다(m) — 하이킥. beginFrame이 0으로 되돌린다 */
+  setRise(m: number) {
+    this.fighter.model.position.y = m;
+    this.fighter.model.updateMatrixWorld(true);
+  }
+
   /** 모든 뼈를 쉬는 자세로 되돌리고 주먹을 쥔다 (뼈 크기는 그대로) */
   beginFrame() {
+    this.fighter.model.position.y = 0;
     for (const [bone, q] of this.rest) bone.quaternion.copy(q);
     for (const [bone, q] of this.fist) bone.quaternion.copy(q);
     this.fighter.model.updateMatrixWorld(true);
@@ -228,6 +235,113 @@ export class FighterRig {
       if (side === skip) continue;
       this.reachArm(side, this.guardPoint(side, new THREE.Vector3(), lowered), this.elbowPole(side));
     }
+  }
+
+  // ── 다리·골반·팔꿈치 (PLAN 작업 12) ──
+
+  /**
+   * 골반 돌리기(°, +면 오른쪽 엉덩이가 앞으로), 몸통 뒤로 젖히기(°), 골반 옆 기울이기(°, +면 왼쪽 엉덩이가 올라감).
+   * setTwist보다 먼저 부른다.
+   */
+  setHips(twistDeg: number, leanBackDeg: number, rollDeg = 0) {
+    const up = new THREE.Vector3(0, 1, 0);
+    this.rotateWorld(this.bone("pelvis"), up, THREE.MathUtils.degToRad(twistDeg));
+    if (rollDeg !== 0) this.rotateWorld(this.bone("pelvis"), this.forward(), THREE.MathUtils.degToRad(rollDeg));
+    // 젖히기: 선수 왼쪽 축으로 돌리면 윗몸이 뒤로 간다 (앞 = +Z, 왼쪽 = +X 기준 오른손 법칙)
+    const axis = this.left();
+    this.rotateWorld(this.bone("spine_01"), axis, -THREE.MathUtils.degToRad(leanBackDeg));
+  }
+
+  /** 엉덩이 관절 위치 (월드) */
+  hip(side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    return this.pos(`thigh_${side}`, target);
+  }
+
+  /** 다리 길이(월드): 넓적다리, 정강이 */
+  legLengths(side: ArmSide) {
+    const h = this.pos(`thigh_${side}`);
+    const k = this.pos(`calf_${side}`);
+    const a = this.pos(`foot_${side}`);
+    return { thigh: h.distanceTo(k), shank: k.distanceTo(a) };
+  }
+
+  /** 정강이 위 한 점 (무릎에서 frac만큼 발목 쪽) — 돌려차기 끝점 */
+  shinPoint(side: ArmSide, frac: number, target = new THREE.Vector3()): THREE.Vector3 {
+    const k = this.pos(`calf_${side}`, target);
+    return k.lerp(this.pos(`foot_${side}`), frac);
+  }
+
+  /** 무릎이 향할 쪽: 서 있을 때는 앞, 돌려차기는 위로 돌아간다 (turn 0~1) */
+  kneePole(side: ArmSide, turn = 0): THREE.Vector3 {
+    const h = this.hip(side);
+    const standing = h.clone().addScaledVector(this.forward(), 1);
+    const turned = h.clone().add(new THREE.Vector3(0, 1, 0)).addScaledVector(this.forward(), 0.3);
+    return standing.lerp(turned, turn);
+  }
+
+  /**
+   * 다리 끝점을 target에 놓는다.
+   * - frac < 1: 정강이 위 점(돌려차기) — 발은 정강이를 따라 뻗는다
+   * - frac = 1: 발목(앞차기·옆차기) — 발끝은 footDir 쪽
+   */
+  reachLeg(side: ArmSide, target: THREE.Vector3, pole: THREE.Vector3, frac: number, footDir?: THREE.Vector3): boolean {
+    const { thigh, shank } = this.legLengths(side);
+    const r = solveTwoBone(this.hip(side), target, thigh, shank * frac, pole);
+    this.aim(this.bone(`thigh_${side}`), this.bone(`calf_${side}`), r.joint);
+    const dir = r.end.clone().sub(r.joint).normalize();
+    const ankle = r.joint.clone().addScaledVector(dir, shank);
+    this.aim(this.bone(`calf_${side}`), this.bone(`foot_${side}`), ankle);
+    const toe = ankle.clone().add(footDir ? footDir.clone().normalize() : dir);
+    this.aim(this.bone(`foot_${side}`), this.bone(`ball_${side}`), toe);
+    return r.reached;
+  }
+
+  /** 무릎 치기: 넓적다리를 target 쪽으로, 정강이는 뒤아래로 접는다 */
+  reachKnee(side: ArmSide, target: THREE.Vector3): boolean {
+    const { thigh, shank } = this.legLengths(side);
+    const h = this.hip(side);
+    const dir = target.clone().sub(h);
+    const reached = dir.length() <= thigh * 1.001;
+    const knee = h.clone().addScaledVector(dir.normalize(), thigh);
+    this.aim(this.bone(`thigh_${side}`), this.bone(`calf_${side}`), knee);
+    const fold = new THREE.Vector3(0, -1, 0).addScaledVector(this.forward(), -0.6).normalize();
+    this.aim(this.bone(`calf_${side}`), this.bone(`foot_${side}`), knee.clone().addScaledVector(fold, shank));
+    return reached;
+  }
+
+  /** 팔꿈치 끝(뼈 돌출부)이 관절 가운데에서 위팔 방향으로 튀어나온 길이(m, 기본 체형) — 그림용 */
+  static readonly ELBOW_TIP_M = 0.05;
+
+  /** 팔꿈치 끝 위치 (월드) — 팔꿈치 치기에서 상대에 닿는 곳 */
+  elbowTip(side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    const s = this.shoulder(side);
+    const e = this.pos(`lowerarm_${side}`, target);
+    return e.addScaledVector(e.clone().sub(s).normalize(), FighterRig.ELBOW_TIP_M * this.scale);
+  }
+
+  /** 팔꿈치 치기: 팔꿈치 끝이 target에 오도록 위팔을 돌리고, 아래팔은 접어 손이 제 귀 옆에 오게 한다 */
+  reachElbow(side: ArmSide, target: THREE.Vector3): boolean {
+    const upper = this.armLengths(side).upper;
+    const reach = upper + FighterRig.ELBOW_TIP_M * this.scale;
+    const s = this.shoulder(side);
+    const dir = target.clone().sub(s);
+    const reached = dir.length() <= reach * 1.001;
+    const elbow = s.clone().addScaledVector(dir.normalize(), upper);
+    this.aim(this.bone(`upperarm_${side}`), this.bone(`lowerarm_${side}`), elbow);
+    const ear = this.pos("head").addScaledVector(this.outward(side), 0.08 * this.scale);
+    this.aim(this.bone(`lowerarm_${side}`), this.bone(`hand_${side}`), ear);
+    this.aim(this.bone(`hand_${side}`), this.bone(`middle_01_${side}`), ear.clone().addScaledVector(this.forward(), 0.1));
+    return reached;
+  }
+
+  /** 팔꿈치 관절 위치 (월드) */
+  elbowPos(side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    return this.pos(`lowerarm_${side}`, target);
+  }
+
+  /** 무릎 관절 위치 (월드) */
+  kneePos(side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    return this.pos(`calf_${side}`, target);
   }
 
   // ── 주먹 쥐기 ──

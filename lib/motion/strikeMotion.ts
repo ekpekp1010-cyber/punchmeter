@@ -138,3 +138,142 @@ export function punchMotion(
 ): StrikeMotion {
   return buildStrikeMotion(kind, punchPath(kind, guard, target, frame), guard, contactSpeedMps, PUNCH_TWIST_DEG[kind]);
 }
+
+// ── 킥·팔꿈치·무릎 (PLAN 작업 12) ──
+// 끝점: 돌려차기류(로우·카프·미들·하이)는 정강이, 프런트·사이드킥은 발, 팔꿈치는 팔꿈치, 무릎은 무릎.
+// 경로 모양은 보기 좋게 정한 그림용 값이고, 닿는 순간 속도는 펀치와 같은 속도 곡선으로 정해진다.
+
+/** 몸통(척추) 최대 회전(°, 그림용) — 펀치 포함 12가지 */
+export const STRIKE_TWIST_DEG: Record<TechniqueId, number> = {
+  ...PUNCH_TWIST_DEG,
+  lowKick: 20,
+  calfKick: 20,
+  middleKick: 25,
+  highKick: 25,
+  frontKick: 5,
+  sideKick: 15,
+  elbow: 35,
+  knee: 15,
+};
+
+/** 골반(엉덩이) 최대 회전(°, 그림용) — 돌려차기는 엉덩이를 돌리고, 사이드킥은 옆으로 선다 */
+export const HIP_TWIST_DEG: Record<TechniqueId, number> = {
+  jab: 0,
+  cross: 10,
+  hook: 8,
+  uppercut: 5,
+  lowKick: 40,
+  calfKick: 40,
+  middleKick: 55,
+  highKick: 60,
+  frontKick: 10,
+  sideKick: 75,
+  elbow: 15,
+  knee: 20,
+};
+
+/** 몸통을 뒤로 젖히는 최대 각도(°, 그림용) — 높이 찰수록 크다 */
+export const LEAN_BACK_DEG: Record<TechniqueId, number> = {
+  jab: 0,
+  cross: 0,
+  hook: 0,
+  uppercut: 0,
+  lowKick: 8,
+  calfKick: 8,
+  middleKick: 15,
+  highKick: 25,
+  frontKick: 12,
+  sideKick: 20,
+  elbow: 0,
+  knee: 10,
+};
+
+/** 기술 하나의 끝점 경로 (start = 가드 자세에서의 끝점 위치) */
+export function strikePath(technique: TechniqueId, start: Vector3, target: Vector3, frame: StrikeFrame): ArcPath {
+  if (technique in PUNCH_TWIST_DEG) return punchPath(technique as PunchId, start, target, frame);
+  const D = start.distanceTo(target);
+  const up = frame.up;
+  const f = frame.forward;
+  const out = frame.outward;
+  const rise = Math.max(0, target.clone().sub(start).dot(up));
+  switch (technique) {
+    // 돌려차기: 바깥으로 크게 돌아 올라갔다가 옆에서 안으로 들어온다
+    case "lowKick":
+    case "calfKick":
+    case "middleKick":
+    case "highKick":
+      return bezierPath(
+        start,
+        start.clone().addScaledVector(out, 0.35 * D).addScaledVector(up, 0.3 * rise + 0.1 * D),
+        target.clone().addScaledVector(out, 0.5 * D).addScaledVector(f, -0.2 * D),
+        target,
+      );
+    // 앞차기: 무릎을 들어 올렸다가(접기) 앞으로 곧게 민다
+    case "frontKick":
+      return bezierPath(
+        start,
+        start.clone().addScaledVector(up, 0.6 * rise + 0.2 * D).addScaledVector(f, 0.1 * D),
+        target.clone().addScaledVector(f, -0.45 * D),
+        target,
+      );
+    // 옆차기: 무릎을 몸 앞으로 접었다가 옆(상대 쪽)으로 곧게 민다
+    case "sideKick":
+      return bezierPath(
+        start,
+        start.clone().addScaledVector(up, 0.6 * rise + 0.2 * D).addScaledVector(out, -0.1 * D),
+        target.clone().addScaledVector(f, -0.5 * D),
+        target,
+      );
+    // 팔꿈치: 옆에서 수평으로 휘둘러 들어온다
+    case "elbow":
+      return bezierPath(
+        start,
+        start.clone().addScaledVector(out, 0.3 * D).addScaledVector(up, 0.05 * D),
+        target.clone().addScaledVector(out, 0.4 * D).addScaledVector(f, -0.1 * D),
+        target,
+      );
+    // 무릎: 아래에서 앞·위로 찔러 올린다
+    case "knee":
+      return bezierPath(
+        start,
+        start.clone().addScaledVector(f, 0.15 * D).addScaledVector(up, -0.05 * D),
+        target.clone().addScaledVector(f, -0.35 * D).addScaledVector(up, -0.25 * D),
+        target,
+      );
+    default:
+      return linePath(start, target);
+  }
+}
+
+/** 기술 하나의 동작 (12가지 모두) */
+export function strikeMotion(
+  technique: TechniqueId,
+  start: Vector3,
+  target: Vector3,
+  frame: StrikeFrame,
+  contactSpeedMps: number,
+): StrikeMotion {
+  return buildStrikeMotion(
+    technique,
+    strikePath(technique, start, target, frame),
+    start,
+    contactSpeedMps,
+    STRIKE_TWIST_DEG[technique],
+  );
+}
+
+/** 골반을 옆으로 기울이는 최대 각도(°, 그림용) — 차는 쪽 엉덩이를 올려 높은 곳을 찬다 */
+export const HIP_ROLL_DEG: Record<TechniqueId, number> = {
+  jab: 0,
+  cross: 0,
+  hook: 0,
+  uppercut: 0,
+  lowKick: 5,
+  calfKick: 3,
+  middleKick: 15,
+  highKick: 28,
+  frontKick: 0,
+  sideKick: 22,
+  elbow: 0,
+  knee: 5,
+};

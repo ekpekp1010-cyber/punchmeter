@@ -3,7 +3,8 @@ import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { solveTwoBone } from "./ik";
 import { extendDuration } from "./path";
-import { punchMotion, type PunchId, type StrikeFrame } from "./strikeMotion";
+import type { TechniqueId } from "../types";
+import { punchMotion, strikeMotion, type PunchId, type StrikeFrame } from "./strikeMotion";
 
 const frame: StrikeFrame = {
   forward: new Vector3(1, 0, 0),
@@ -14,7 +15,7 @@ const guard = new Vector3(0.25, 1.5, 0.1);
 const target = new Vector3(0.75, 1.55, 0);
 
 /** 시각 t 바로 앞 짧은 구간의 평균 속도 */
-function speedAt(m: ReturnType<typeof punchMotion>, t: number, dt = 1e-4) {
+function speedAt(m: ReturnType<typeof strikeMotion>, t: number, dt = 1e-4) {
   return m.sample(t).effector.distanceTo(m.sample(t - dt).effector) / dt;
 }
 
@@ -48,6 +49,39 @@ describe("펀치 동작: 닿는 순간 속도와 위치", () => {
   it("회수 뒤에는 가드 자리로 돌아온다", () => {
     const m = punchMotion("cross", guard, target, frame, 8);
     expect(m.sample(m.timing.total).effector.distanceTo(guard)).toBeLessThan(1e-9);
+  });
+});
+
+describe("킥·팔꿈치·무릎: 닿는 순간 속도와 위치", () => {
+  const kickStart = new Vector3(0.05, 0.4, 0.1);
+  const targets: Record<string, Vector3> = {
+    lowKick: new Vector3(0.75, 0.7, 0),
+    calfKick: new Vector3(0.75, 0.35, 0),
+    middleKick: new Vector3(0.75, 1.1, 0),
+    highKick: new Vector3(0.75, 1.6, 0),
+    frontKick: new Vector3(0.8, 1.05, 0),
+    sideKick: new Vector3(0.85, 1.1, 0),
+    knee: new Vector3(0.45, 1.05, 0),
+    elbow: new Vector3(0.5, 1.55, 0),
+  };
+  for (const technique of Object.keys(targets) as TechniqueId[]) {
+    it(`${technique}: 닿는 순간 끝점 속도가 정한 속도의 ±1%, 위치는 노린 곳`, () => {
+      const v = 10;
+      const start = technique === "elbow" ? new Vector3(0.1, 1.3, 0.15) : technique === "knee" ? new Vector3(0.05, 0.5, 0.1) : kickStart;
+      const m = strikeMotion(technique, start, targets[technique], frame, v);
+      expect(Math.abs(speedAt(m, m.timing.contactTime - 1e-9) - v) / v).toBeLessThan(0.01);
+      expect(m.sample(m.timing.contactTime).effector.distanceTo(targets[technique])).toBeLessThan(1e-6);
+    });
+  }
+
+  it("돌려차기는 바깥으로 돌아 들어오고, 앞차기는 앞으로 곧게 민다", () => {
+    const round = strikeMotion("middleKick", kickStart, targets.middleKick, frame, 10);
+    expect(round.sample(round.timing.pre + round.timing.extend * 0.5).effector.z).toBeGreaterThan(0.15);
+    const front = strikeMotion("frontKick", kickStart, targets.frontKick, frame, 8);
+    const a = front.sample(front.timing.contactTime - 0.01).effector;
+    const b = front.sample(front.timing.contactTime).effector;
+    const dir = b.clone().sub(a).normalize();
+    expect(dir.x).toBeGreaterThan(0.9); // 닿기 직전 앞(+x)으로 곧게
   });
 });
 

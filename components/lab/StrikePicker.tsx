@@ -7,8 +7,8 @@ import { useId } from "react";
 import { BODY_PARTS, SOURCES, TECHNIQUES, bodyPartInfo, sideCanTarget, techniqueInfo } from "@/lib/reference";
 import type { Defense, FighterId, StrikeSide, TechniqueId } from "@/lib/types";
 
-/** 지금 3D로 재생할 수 있는 기술 (킥·팔꿈치·무릎은 PLAN 작업 12에서) */
-export const PLAYABLE: TechniqueId[] = ["jab", "cross", "hook", "uppercut"];
+/** 3D로 재생할 수 있는 기술 (PLAN 작업 11: 펀치, 작업 12: 킥·팔꿈치·무릎) */
+export const PLAYABLE: TechniqueId[] = TECHNIQUES.map((t) => t.id);
 
 export interface StrikeDraft {
   attacker: FighterId;

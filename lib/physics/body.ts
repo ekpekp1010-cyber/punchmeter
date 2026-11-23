@@ -1,9 +1,17 @@
-// Design Ref: §2.2 처리 ⑧ — 몸무게·분절(몸 조각) 계산과 화면 거리 환산
+// Design Ref: §2.2 처리 ② — 몸무게(계체량·리게인)와 분절(몸 조각) 무게·길이
 // 분절 값은 de Leva 1996 (lib/reference/segments.ts)을 쓴다.
 
 import { REFERENCE_STATURE_MM, SEGMENT_PARAMS, type Segment, type SegmentParam } from "../reference";
 import type { Sex } from "../types";
-import { add, scale, sub, type Vec2 } from "./vector";
+
+/** 키 입력 범위(cm) */
+export const HEIGHT_MIN_CM = 140;
+export const HEIGHT_MAX_CM = 220;
+
+/** 키가 받을 수 있는 범위(140~220cm)인지 */
+export function isValidHeight(heightCm: number): boolean {
+  return Number.isFinite(heightCm) && heightCm >= HEIGHT_MIN_CM && heightCm <= HEIGHT_MAX_CM;
+}
 
 /** 리게인 몸무게 = 계체량 × 1.075 (일반적인 리게인 폭 +5~10%의 가운데 값) */
 export const REGAIN_RATIO = 1.075;
@@ -38,26 +46,3 @@ export function segmentLengthM(segment: Segment, heightCm: number, sex: Sex): nu
   return (heightCm / 100) * ratio;
 }
 
-/** 분절 무게중심 위치 = 시작점 + (끝점 − 시작점) × 무게중심 비율 */
-export function segmentComPoint(origin: Vec2, end: Vec2, segment: Segment, sex: Sex): Vec2 {
-  const t = segmentParam(segment).comPct[sex] / 100;
-  return add(origin, scale(sub(end, origin), t));
-}
-
-/**
- * 화면 거리 1단위가 실제 몇 m인지 (키 기준).
- * standingHeightUnits는 서 있는 장면에서 잰 정수리~발바닥 화면 길이.
- */
-export function metersPerUnitFromHeight(heightCm: number, standingHeightUnits: number): number {
-  return heightCm / 100 / standingHeightUnits;
-}
-
-/** 화면 거리 1단위가 실제 몇 m인지 (리치 기준). armSpanUnits는 양팔을 벌린 화면 길이 */
-export function metersPerUnitFromReach(reachCm: number, armSpanUnits: number): number {
-  return reachCm / 100 / armSpanUnits;
-}
-
-/** 키 기준과 리치 기준을 합친 환산값. 리치가 없으면 키 기준만 쓴다 */
-export function combinedMetersPerUnit(fromHeight: number, fromReach?: number): number {
-  return fromReach === undefined ? fromHeight : (fromHeight + fromReach) / 2;
-}

@@ -33,7 +33,14 @@ export interface SpeedReference {
  * - segmentEstimate: 자료가 없어 PLAN 작업 6에서 움직이는 분절(de Leva 비율표)의 무게로 어림 → "추정"
  */
 export type EffectiveMassReference =
-  | { basis: "research"; kg: number; sourceIds: string[]; note: string }
+  | {
+      basis: "research";
+      kg: number;
+      /** 추정 범위 (평균 ± 표준편차) */
+      rangeKg: [number, number];
+      sourceIds: string[];
+      note: string;
+    }
   | { basis: "segmentEstimate"; segments: Segment[]; note: string };
 
 export interface TechniqueInfo {
@@ -94,8 +101,9 @@ export const TECHNIQUES: TechniqueInfo[] = [
     effectiveMass: {
       basis: "research",
       kg: 2.9,
+      rangeKg: [0.9, 4.9],
       sourceIds: ["walilko2005"],
-      note: "올림픽 복서 스트레이트 18회, impulse 방식 2.9 ± 2.0 kg (펀치면 글러브 무게를 더한다)",
+      note: "올림픽 복서 스트레이트 18회, impulse 방식 2.9 ± 2.0 kg (펀치면 글러브 무게를 더한다). 체중과 상관없는 평균값이라 계체량·리게인이 같다",
     },
     targets: [...HEAD_FRONT, "solarPlexus", "abdomen"],
     blockedBy: "forearm",

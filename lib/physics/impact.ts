@@ -1,9 +1,7 @@
-// Design Ref: §2.2 처리 ⑧·⑨ — 운동량·운동에너지·추정 충격력·글러브 보정·강도 지수
+// Design Ref: §2.2 처리 ② — 운동량·운동에너지·추정 충격력·글러브 보정·강도 지수
 
 import { GLOVE_PEAK_FORCE, MAX_FORCE_RECORD, STRIKE_BENCHMARKS, EFFECTIVE_MASS } from "../reference";
 import type { GloveOz, TechniqueKind } from "../types";
-
-export type Limb = "punch" | "kick";
 
 /** 운동량(kg·m/s) = 유효 질량 × 속도 */
 export function momentum(effectiveMassKg: number, speedMs: number): number {
@@ -17,9 +15,9 @@ export function kineticEnergy(effectiveMassKg: number, speedMs: number): number 
 
 /**
  * 충격 시간(초) — 운동량을 최대 충격력으로 바꾸는 데 쓰는 환산값 (환산 추정값).
- * 영상으로는 맞는 순간의 접촉 시간을 잴 수 없어서, 올림픽 복서 연구(walilko2005)의 평균으로 정한다:
+ * 기술마다 맞는 순간의 접촉 시간 자료가 없어서, 올림픽 복서 연구(walilko2005)의 평균으로 정한다:
  *   유효 질량 2.9kg × 속도 9.14 m/s ÷ 최대 충격력 3427 N ≈ 0.0077초
- * 이 연구는 글러브를 낀 스트레이트 펀치라, 킥에도 같은 값을 쓰는 것은 추정이다.
+ * 이 연구는 글러브를 낀 스트레이트 펀치라, 다른 기술(킥·팔꿈치·무릎)에 같은 값을 쓰는 것은 추정이다.
  */
 function walilkoValue(measure: "velocity" | "peakForce"): number {
   const entry = STRIKE_BENCHMARKS.find(
@@ -45,7 +43,7 @@ export interface GloveFactor {
    * measured: 같은 실험에서 잰 값 (10·12·14·16oz)
    * borrowed: 자료가 없어 10oz 값을 빌림 (8oz, "추정")
    * insufficient: 근거 부족, 흡수 없음으로 계산 (맨손·4oz)
-   * notApplicable: 킥이라 보정하지 않음
+   * notApplicable: 펀치가 아니라 보정하지 않음 (킥·팔꿈치·무릎)
    */
   basis: "measured" | "borrowed" | "insufficient" | "notApplicable";
 }
@@ -55,8 +53,8 @@ export interface GloveFactor {
  * 충격 시간 환산값이 글러브를 낀 펀치(walilko2005)로 정해졌으므로 10oz를 기준(1)으로 둔다.
  * 10~16oz는 nakano2009의 측정값 비율. 단, 이 연구에서 무게 사이 차이는 통계적으로 의미가 없었다.
  */
-export function gloveForceFactor(gloveOz: GloveOz, limb: Limb): GloveFactor {
-  if (limb === "kick") return { factor: 1, basis: "notApplicable" };
+export function gloveForceFactor(gloveOz: GloveOz, kind: TechniqueKind): GloveFactor {
+  if (kind !== "punch") return { factor: 1, basis: "notApplicable" };
   if (gloveOz === 0 || gloveOz === 4) return { factor: 1, basis: "insufficient" };
   if (gloveOz === 8) return { factor: 1, basis: "borrowed" };
   const base = GLOVE_PEAK_FORCE.find((g) => g.gloveOz === 10)?.value;

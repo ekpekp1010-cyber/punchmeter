@@ -1,14 +1,14 @@
-// Design Ref: §2.2 처리 ⑧ — 유효 질량은 "영상 분절 운동량 방식"으로 구하고, 방법 B 연구값으로 검산한다
-// PLAN 작업 2 (보완): 몸의 조각(분절)마다 체중 대비 무게와 무게중심 위치.
+// Design Ref: §2.2 처리 ② — 유효 질량 연구값이 없는 기술은 분절 무게로 어림한다 ("추정")
+// 몸의 조각(분절)마다 체중 대비 무게, 무게중심 위치, 길이.
 //
 // 출처: de Leva P (1996). Adjustments to Zatsiorsky-Seluyanov's segment inertia parameters.
 //       J Biomech 29(9):1223–1230, Table 4 (원문 표를 직접 확인).
 // 측정 대상: 대학 나이의 운동하는 젊은 성인 (여성 15명 평균 61.9kg, 남성 100명 평균 73.0kg).
 //
-// 사용법 (PLAN 작업 3에서 구현):
-//   분절 무게 = 체중 × massPct / 100
-//   분절 무게중심 = 시작 관절 + (끝 관절 − 시작 관절) × comPct / 100
-//   유효 질량 = Σ(분절 무게 × 분절 무게중심의 타격 방향 속도) ÷ 주먹(발) 속도
+// 사용법:
+//   분절 무게 = 체중 × massPct / 100 (lib/physics/body.ts)
+//   분절 길이 = 키 × lengthMm / 평균 키 (뼈 길이 환산, 한계 힘 계산)
+//   유효 질량 어림 = 움직이는 분절 무게의 합 (lib/physics/effectiveMass.ts)
 
 export type Segment =
   | "head"
@@ -109,18 +109,3 @@ export const SEGMENT_PARAMS: SegmentParam[] = [
 ];
 
 export const SEGMENT_SOURCE_IDS = ["deleva1996"];
-
-/**
- * 방법 B(최대 충격력 ÷ 가속도) 연구값의 체중 대비 유효 질량 범위.
- * 영상 분절 계산값이 이 범위에서 크게 벗어나면 "범위를 벗어난 추정값"으로 표시하는 검산용이다.
- * 값의 출처는 strikes.ts의 EFFECTIVE_MASS(method: "forceAccel") 참고.
- */
-export const METHOD_B_CHECK_RANGE_PCT: Partial<
-  Record<"jab" | "cross" | "roundhouseKick" | "sideKick" | "frontKick", [number, number]>
-> = {
-  jab: [21.51, 21.51],
-  cross: [21.04, 21.04],
-  roundhouseKick: [18, 20.12],
-  sideKick: [73.09, 85],
-  frontKick: [44, 44],
-};

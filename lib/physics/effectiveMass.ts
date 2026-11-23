@@ -1,68 +1,38 @@
-// Design Ref: §2.2 처리 ⑧ — 유효 질량: 영상 분절 운동량 방식 + 방법 B 연구값 검산
-// 유효 질량 = Σ(분절 무게 × 분절 무게중심의 타격 방향 속도) ÷ 주먹(발) 속도
+// Design Ref: §2.2 처리 ② — 유효 질량: 연구값이 있으면 연구값, 없으면 분절 비율표(de Leva)로 어림
+// PLAN 작업 6 (계산 연결). 영상 시절의 "분절 속도로 구하는 방식"은 쓰지 않는다 (3D 실험실은 속도만 정하므로).
+//
+// 분절 어림 규칙 ("추정"으로 표시):
+//   값(= 범위 아래 끝) = 몸통에 가장 가까운 분절(목록의 마지막)을 뺀 끝쪽 분절 무게의 합
+//   범위 위 끝        = 그 기술에서 움직이는 분절(techniques.ts의 segments) 무게 전체의 합
+// 예) 펀치: 손 + 아래팔 = 값, 손 + 아래팔 + 위팔 = 위 끝 / 킥: 발 + 정강이 = 값, + 허벅지 = 위 끝
+// 전체 합을 값으로 쓰면 "허벅지까지 통째로 발 속도로 움직인다"고 보는 셈이라 킥 충격력이 공개 최고 기록의
+// 몇 배로 커졌다 (70kg 미들킥 약 25,800 N). 끝쪽 분절 합은 공개 측정값과 비슷하게 나온다
+// (70kg 기준 잽 약 1,340 N·훅 약 2,665 N·미들킥 약 7,420 N, PLAN 작업 22에서 다시 검증).
 
-import { METHOD_B_CHECK_RANGE_PCT, OZ_TO_KG } from "../reference";
-import type { GloveOz } from "../types";
-import { dot, length, unit, type Vec2 } from "./vector";
-
-/** 맞기 직전 분절 하나의 무게와 무게중심 속도 */
-export interface SegmentMotion {
-  massKg: number;
-  /** 분절 무게중심의 속도(m/s) */
-  velocity: Vec2;
-}
-
-/**
- * 타격 한 번의 유효 질량(kg).
- * tipVelocity는 주먹(발) 끝의 속도. 끝이 움직이지 않으면 계산할 수 없어 null.
- * 타격 방향과 반대로 움직이는 분절은 음수로 더해진다 (몸을 빼면서 치면 작아짐).
- */
-export function effectiveMassKg(segments: SegmentMotion[], tipVelocity: Vec2): number | null {
-  const direction = unit(tipVelocity);
-  if (!direction) return null;
-  const tipSpeed = length(tipVelocity);
-  const momentumAlongStrike = segments.reduce(
-    (sum, s) => sum + s.massKg * dot(s.velocity, direction),
-    0,
-  );
-  return momentumAlongStrike / tipSpeed;
-}
+import { OZ_TO_KG, type Segment } from "../reference";
+import type { GloveOz, Sex } from "../types";
+import { segmentMassKg } from "./body";
 
 /** 글러브 한 짝의 무게(kg). 펀치의 유효 질량에 더한다 */
 export function gloveMassKg(gloveOz: GloveOz): number {
   return gloveOz * OZ_TO_KG;
 }
 
-/**
- * 검산 허용 폭 (잠정값).
- * 방법 B(최대 충격력 ÷ 가속도)는 맞는 순간 팔을 굳히는 효과까지 담겨 영상 분절 계산보다 크게 나온다.
- * 그래서 아래쪽은 넓게(연구 최솟값의 1/10까지), 위쪽은 최댓값의 2배까지 허용한다.
- * PLAN 작업 23(정확도 검증)에서 실제 영상으로 다시 맞춘다.
- */
-export const METHOD_B_LOWER_FACTOR = 0.1;
-export const METHOD_B_UPPER_FACTOR = 2;
-
-export type MethodBStrike = keyof typeof METHOD_B_CHECK_RANGE_PCT;
-
-export interface MethodBCheck {
-  /** 계산한 유효 질량의 체중 대비 % */
-  ratioPct: number;
-  /** 연구값 범위 (체중 대비 %) */
-  rangePct: [number, number];
-  /** true면 "범위를 벗어난 추정값"으로 표시 */
-  outOfRange: boolean;
+export interface SegmentMassEstimate {
+  /** 가장 몸통 쪽 분절을 뺀 끝쪽 분절 무게의 합(kg). 분절이 하나뿐이면 그 분절 무게 */
+  valueKg: number;
+  /** 움직이는 분절 전체 무게의 합(kg) — 추정 범위 위 끝 */
+  highKg: number;
 }
 
-/** 방법 B 연구값으로 검산. 그 타격의 연구값이 없으면 null */
-export function checkAgainstMethodB(
-  effectiveMass: number,
-  bodyMassKg: number,
-  strike: MethodBStrike,
-): MethodBCheck | null {
-  const range = METHOD_B_CHECK_RANGE_PCT[strike];
-  if (!range) return null;
-  const ratioPct = (effectiveMass / bodyMassKg) * 100;
-  const outOfRange =
-    ratioPct < range[0] * METHOD_B_LOWER_FACTOR || ratioPct > range[1] * METHOD_B_UPPER_FACTOR;
-  return { ratioPct, rangePct: range, outOfRange };
+/**
+ * 분절 비율표로 어림한 유효 질량.
+ * segments는 끝(손·발)에서 몸통 쪽 순서로 적는다 (예: ["hand", "forearm", "upperArm"]).
+ */
+export function segmentEffectiveMass(segments: Segment[], bodyMassKg: number, sex: Sex): SegmentMassEstimate {
+  if (segments.length === 0) throw new Error("분절이 하나 이상 있어야 합니다");
+  const masses = segments.map((s) => segmentMassKg(s, bodyMassKg, sex));
+  const highKg = masses.reduce((a, b) => a + b, 0);
+  const valueKg = masses.length > 1 ? highKg - masses[masses.length - 1] : highKg;
+  return { valueKg, highKg };
 }

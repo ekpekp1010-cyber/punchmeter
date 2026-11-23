@@ -4,15 +4,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CONTACT_TIME_S,
-  checkAgainstMethodB,
   colorStep,
-  directionAngleDeg,
-  effectiveMassKg,
   gloveForceFactor,
   gloveMassKg,
   headAccelToForceN,
   intensityIndex,
-  isPlausibleSpeed,
+  isValidHeight,
   isValidWeighIn,
   kineticEnergy,
   loadRatioPct,
@@ -21,9 +18,9 @@ import {
   partThreshold,
   peakForceN,
   regainKg,
+  segmentEffectiveMass,
   segmentLengthM,
   segmentMassKg,
-  velocity,
 } from "./index";
 import { JOINT_LOCK_REFERENCE, PART_THRESHOLD_PLAN } from "../reference";
 
@@ -50,59 +47,30 @@ describe("분절 (de Leva 1996)", () => {
   });
 });
 
-describe("속도와 각도", () => {
-  it("0.01초 동안 화면 0.1단위(=0.1m) 움직이면 10 m/s", () => {
-    const v = velocity({ x: 0, y: 0 }, { x: 0.1, y: 0 }, 0.01, 1);
-    expect(v.x).toBeCloseTo(10, 6);
-  });
-
-  it("오른쪽은 0°, 화면 위쪽(y 감소)은 90°", () => {
-    expect(directionAngleDeg({ x: 1, y: 0 })).toBeCloseTo(0, 6);
-    expect(directionAngleDeg({ x: 0, y: -1 })).toBeCloseTo(90, 6);
-  });
-
-  it("속도 25 m/s와 0.3 m/s는 이상값, 10 m/s는 정상", () => {
-    expect(isPlausibleSpeed(25)).toBe(false);
-    expect(isPlausibleSpeed(0.3)).toBe(false);
-    expect(isPlausibleSpeed(10)).toBe(true);
+describe("키 범위", () => {
+  it("139cm·221cm는 받지 않고 140cm·220cm는 받는다", () => {
+    expect(isValidHeight(139)).toBe(false);
+    expect(isValidHeight(221)).toBe(false);
+    expect(isValidHeight(140)).toBe(true);
+    expect(isValidHeight(220)).toBe(true);
   });
 });
 
-describe("유효 질량 (영상 분절 운동량 방식)", () => {
-  it("손 0.5kg·10m/s, 아래팔 1.2kg·8m/s, 위팔 2kg·5m/s → 2.46kg", () => {
-    const m = effectiveMassKg(
-      [
-        { massKg: 0.5, velocity: { x: 10, y: 0 } },
-        { massKg: 1.2, velocity: { x: 8, y: 0 } },
-        { massKg: 2, velocity: { x: 5, y: 0 } },
-      ],
-      { x: 10, y: 0 },
-    );
-    expect(m).toBeCloseTo(2.46, 6);
+describe("유효 질량 (분절 어림)", () => {
+  it("73kg 남성 펀치: 값은 손+아래팔 = 체중의 (0.61+1.62)%, 위 끝은 위팔까지 더한 값", () => {
+    const m = segmentEffectiveMass(["hand", "forearm", "upperArm"], 73, "male");
+    expect(m.valueKg).toBeCloseTo((73 * (0.61 + 1.62)) / 100, 6);
+    expect(m.highKg).toBeCloseTo((73 * (0.61 + 1.62 + 2.71)) / 100, 6);
   });
 
-  it("타격 방향과 반대로 움직이는 분절은 유효 질량을 줄인다", () => {
-    const m = effectiveMassKg(
-      [
-        { massKg: 1, velocity: { x: 10, y: 0 } },
-        { massKg: 10, velocity: { x: -1, y: 0 } },
-      ],
-      { x: 10, y: 0 },
-    );
-    expect(m).toBeCloseTo(0, 6);
-  });
-
-  it("주먹이 멈춰 있으면 계산하지 않는다 (null)", () => {
-    expect(effectiveMassKg([{ massKg: 1, velocity: { x: 0, y: 0 } }], { x: 0, y: 0 })).toBeNull();
+  it("체중이 늘면 어림한 유효 질량도 같은 비율로 는다 (리게인 비교가 의미 있음)", () => {
+    const a = segmentEffectiveMass(["foot", "shank", "thigh"], 70, "male").valueKg;
+    const b = segmentEffectiveMass(["foot", "shank", "thigh"], 75.25, "male").valueKg;
+    expect(b / a).toBeCloseTo(1.075, 9);
   });
 
   it("글러브 10oz는 유효 질량에 283.5g을 더한다", () => {
     expect(gloveMassKg(10)).toBeCloseTo(0.2835, 6);
-  });
-
-  it("방법 B 검산: 돌려차기 체중의 19%는 범위 안, 300%는 범위 밖", () => {
-    expect(checkAgainstMethodB(13.3, 70, "roundhouseKick")?.outOfRange).toBe(false);
-    expect(checkAgainstMethodB(210, 70, "roundhouseKick")?.outOfRange).toBe(true);
   });
 });
 
@@ -133,8 +101,10 @@ describe("글러브 보정 (추천안)", () => {
     expect(gloveForceFactor(4, "punch")).toEqual({ factor: 1, basis: "insufficient" });
   });
 
-  it("킥은 글러브와 상관없이 보정하지 않는다", () => {
-    expect(gloveForceFactor(16, "kick")).toEqual({ factor: 1, basis: "notApplicable" });
+  it("킥·팔꿈치·무릎은 글러브와 상관없이 보정하지 않는다", () => {
+    for (const kind of ["kick", "elbow", "knee"] as const) {
+      expect(gloveForceFactor(16, kind)).toEqual({ factor: 1, basis: "notApplicable" });
+    }
   });
 });
 

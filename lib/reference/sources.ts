@@ -208,6 +208,150 @@ export const SOURCES: Record<string, Source> = {
     citation:
       "Nyquist GW, Cheng R, El-Bohy AAR, King AI (1985). Tibia Bending: Strength and Response. SAE 851728.",
   },
+  // ── PLAN 작업 4 (연구값 보강)에서 추가: 타격 ──
+  liu2022a: {
+    id: "liu2022a",
+    citation: "Liu Y et al. (2022). Front Physiol 13:1015154. (엘리트·주니어 복서 앞손 스트레이트 운동학)",
+    doi: "10.3389/fphys.2022.1015154",
+  },
+  liu2022b: {
+    id: "liu2022b",
+    citation: "Liu Y et al. (2022). Front Physiol 13:1099682. (복서 앞손 스트레이트 속도·충격력)",
+    doi: "10.3389/fphys.2022.1099682",
+  },
+  dinu2020: {
+    id: "dinu2020",
+    citation: "Dinu D, Louis J (2020). Front Sports Act Living 2:598861. (주니어·엘리트 복서의 크로스·훅·어퍼컷, 관성 센서 옷)",
+    doi: "10.3389/fspor.2020.598861",
+  },
+  stanley2018: {
+    id: "stanley2018",
+    citation:
+      "Stanley E, Thomson E, Smith G, Lamb KL (2018). Int J Perf Anal Sport 18(5):835–854. (아마추어 복서 최대 펀치의 3차원 운동학)",
+    doi: "10.1080/24748668.2018.1525651",
+  },
+  viano2005: {
+    id: "viano2005",
+    citation: "Viano DC et al. (2005). Neurosurgery 57:1154–1172. (올림픽 복서가 더미 머리를 친 펀치와 미식축구 충격 비교)",
+    doi: "10.1227/01.neu.0000187541.87937.d9",
+  },
+  praphanbundit2020: {
+    id: "praphanbundit2020",
+    citation:
+      "Praphanbundit, Charoenwattana, Makaje (2020). Academic Journal of Thailand National Sports University 12(1):42–50. (무에타이 돌려차기 높이별 속도·힘, 태국어)",
+    url: "https://he02.tci-thaijo.org/index.php/TNSUJournal/article/view/244269",
+  },
+  gavagan2017: {
+    id: "gavagan2017",
+    citation:
+      "Gavagan CJ, Sayers MGL (2017). A biomechanical analysis of the roundhouse kicking technique of expert practitioners: A comparison between the martial arts disciplines of Muay Thai, Karate, and Taekwondo. PLoS One 12(8):e0182645.",
+    doi: "10.1371/journal.pone.0182645",
+  },
+  vagner2019: {
+    id: "vagner2019",
+    citation: "Vágner M et al. (2019). J Hum Kinet 68:145–155. (직업 군인 25명의 앞차기 속도·충격력)",
+    doi: "10.2478/hukin-2019-0063",
+  },
+  hidayat2025: {
+    id: "hidayat2025",
+    citation: "Hidayat et al. (2025). Front Physiol 16:1708748. (초보·숙련자 옆차기 운동학)",
+    doi: "10.3389/fphys.2025.1708748",
+  },
+  beranek2020: {
+    id: "beranek2020",
+    citation:
+      "Beránek V et al. (2020). Int J Environ Res Public Health 17(21):7782. (무릎 꿇은 자세 손·팔꿈치 타격 힘, 남 60명·여 31명)",
+    doi: "10.3390/ijerph17217782",
+  },
+  vagner2024: {
+    id: "vagner2024",
+    citation: "Vágner M et al. (2024). Sports 12:205. (사관생도 팔꿈치 타격 힘)",
+    doi: "10.3390/sports12080205",
+  },
+  leemcgill2017: {
+    id: "leemcgill2017",
+    citation: "Lee B, McGill S (2017). J Sports Sci 35:1768–1780. (무에타이 선수 훈련 전후 무릎 치기 속도·힘)",
+    doi: "10.1080/02640414.2016.1236207",
+  },
+  // ── PLAN 작업 4 (연구값 보강)에서 추가: 의학·관절 ──
+  kimpara2003: {
+    id: "kimpara2003",
+    citation:
+      "Kimpara H, Iwamoto M, Miki K, Lee JB, Begeman PC, Yang KH, King AI (2003). Biomechanical properties of the male and female chest subjected to frontal and lateral impacts. IRCOBI Conference, Lisbon.",
+    url: "https://www.ircobi.org/wordpress/downloads/irc0111/2003/Session5/5.1.pdf",
+  },
+  yoganandan2000: {
+    id: "yoganandan2000",
+    citation:
+      "Yoganandan N et al. (2000). Patterns of abdominal injuries in frontal and side impacts. Annu Proc Assoc Adv Automot Med 44:17–36. (Yoganandan 1996 \"Response of human lower thorax to impact\"의 간 손상 힘을 인용)",
+    url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC3217390/",
+  },
+  barnes2022: {
+    id: "barnes2022",
+    citation:
+      "Barnes et al. (2022). An experimental model of contusion injury in humans. PLoS One 17(11):e0277765.",
+    doi: "10.1371/journal.pone.0277765",
+  },
+  link2003: {
+    id: "link2003",
+    citation:
+      "Link et al. (2003). J Am Coll Cardiol 41:99–104. (심장 진탕 동물 실험, Madias 2007 리뷰의 인용으로 확인)",
+    doi: "10.1016/s0735-1097(02)02669-4",
+  },
+  soucie2011: {
+    id: "soucie2011",
+    citation:
+      "Soucie JM et al. (2011). Range of motion measurements: reference values and a database for comparison studies. Haemophilia 17(3):500–507. (값은 CDC Joint ROM Study 표)",
+    doi: "10.1111/j.1365-2516.2010.02399.x",
+    url: "https://archive.cdc.gov/www_cdc_gov/ncbddd/jointrom/index.html",
+  },
+  mccully2005: {
+    id: "mccully2005",
+    citation:
+      "McCully SP, Kumar N, Lazarus MD, Karduna AR (2005). Internal and external rotation of the shoulder: effects of plane, end-range determination, and scapular motion. J Shoulder Elbow Surg 14:602–610.",
+    doi: "10.1016/j.jse.2005.05.003",
+  },
+  lorenz2015: {
+    id: "lorenz2015",
+    citation:
+      "Lorenz A et al. (2015). Practicability for robot-aided measurement of knee stability in-vivo. BMC Musculoskelet Disord 16:373.",
+    doi: "10.1186/s12891-015-0826-5",
+  },
+  duma2004: {
+    id: "duma2004",
+    citation:
+      "Duma SM et al. (2004). Upper extremity interaction with a helicopter side airbag: injury criteria for dynamic hyperextension of the female elbow joint. Stapp Car Crash J 48:155–176.",
+    doi: "10.4271/2004-22-0007",
+  },
+  tyrdal1998: {
+    id: "tyrdal1998",
+    citation:
+      "Tyrdal S, Olsen BS (1998). Knee Surg Sports Traumatol Arthrosc 6:36–43. (사체 팔꿈치 과신전 인대 손상)",
+    doi: "10.1007/s001670050070",
+  },
+  kennedy1963: {
+    id: "kennedy1963",
+    citation:
+      "Kennedy JC (1963). Complete dislocation of the knee joint. J Bone Joint Surg Am 45:889–904. (리뷰의 인용으로만 확인)",
+  },
+  meyer2008: {
+    id: "meyer2008",
+    citation:
+      "Meyer EG, Haut RC (2008). Anterior cruciate ligament injury induced by internal tibial torsion or tibiofemoral compression. J Biomech 41(16):3377–3383.",
+    doi: "10.1016/j.jbiomech.2008.09.023",
+  },
+  wei2010: {
+    id: "wei2010",
+    citation:
+      "Wei F et al. (2010). A biomechanical investigation of ankle injury under excessive external foot rotation in the human cadaver. J Biomech Eng 132(9):091001.",
+    doi: "10.1115/1.4002025",
+  },
+  funk2002: {
+    id: "funk2002",
+    citation:
+      "Funk JR et al. (2002). The effects of axial preload and dorsiflexion on the tolerance of the ankle/subtalar joint to dynamic inversion and eversion. Stapp Car Crash J 46.",
+    doi: "10.4271/2002-22-0013",
+  },
   kennedy2004: {
     id: "kennedy2004",
     citation:

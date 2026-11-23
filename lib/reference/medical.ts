@@ -251,7 +251,79 @@ export const TORSO_FORCE: ThresholdEntry[] = [
     verifiedPrimary: false,
     note: "진자가 아니라 썰매 실험이라 타격과 조건이 더 다름",
   },
+  // ── PLAN 작업 4에서 추가 ──
+  {
+    region: "torso",
+    site: "가슴(정면, 복장뼈 가운데), 남성",
+    outcome: "중간 에너지 충격의 평균 최대 힘 (이때 평균 압축률 38.8% > AIS 3+ 50% 위험 압축률 35%)",
+    value: 4910,
+    unit: "N",
+    loading: "지름 150 mm 충격체, 1.6~23.6 kg, 4.0~14.5 m/s, 사체 11구 (약 600 J 묶음)",
+    sourceIds: ["kimpara2003"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±2280 N. 논문은 힘이 아니라 압축률·변위를 부상 예측값으로 골랐다. 낮은 에너지(약 200 J) 묶음은 3050 ± 1470 N, 압축률 29.6%",
+  },
+  {
+    region: "torso",
+    site: "가슴(정면, 복장뼈 가운데), 여성",
+    outcome: "중간 에너지 충격의 평균 최대 힘 (이때 평균 압축률 45.1% > AIS 3+ 50% 위험 압축률 36%)",
+    value: 4170,
+    unit: "N",
+    loading: "위와 같은 실험, 사체 5구",
+    sourceIds: ["kimpara2003"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±1110 N",
+  },
+  {
+    region: "torso",
+    site: "간 (갈비뼈 아래쪽 비스듬한 충격)",
+    outcome: "심각한 간 손상",
+    value: [1900, 2100],
+    unit: "N",
+    loading: "사체 비스듬한 진자 충격, 변위 60~85 mm (Yoganandan 1996)",
+    sourceIds: ["yoganandan2000"],
+    confidence: "medium",
+    verifiedPrimary: false,
+    note: "인용한 논문(Yoganandan 2000)의 문장으로 확인. 옆 복부 6730 N(MAIS 4+ 25%)보다 훨씬 낮다",
+  },
 ];
+
+/** 가슴 정면 압축률 기준 (힘이 아니라 가슴이 눌린 비율) */
+export const FRONTAL_CHEST_COMPRESSION: ThresholdEntry[] = [
+  {
+    region: "torso",
+    site: "가슴(정면)",
+    outcome: "AIS 3+ 50% 위험",
+    value: 35,
+    unit: "% (남성) — 여성 36%",
+    loading: "사체 정면 진자 충격 자료 정리. 변위로는 남 81 mm / 여 68 mm",
+    sourceIds: ["kimpara2003"],
+    confidence: "high",
+    verifiedPrimary: true,
+  },
+];
+
+/** 근육 타박(멍·부기) — 뼈 부상 기준보다 훨씬 낮은 힘에서 일어난다. 의학적 판단 문장에 참고로 쓴다 */
+export const MUSCLE_CONTUSION: ThresholdEntry[] = [
+  {
+    region: "leg",
+    site: "허벅지 바깥 근육(가쪽넓은근), 건강한 남성",
+    outcome: "부기(부종)가 가장 크게 생긴 충격 (7.2 kg 낙하)",
+    value: 1681,
+    unit: "N",
+    loading: "지름 10 cm 단단한 공, 67 cm 높이에서 낙하, 남성 32명 (4.2~7.2 kg 네 가지 무게)",
+    sourceIds: ["barnes2022"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±235.6 N. 50% 위험 기준이 아니라 '이 정도 충격에서 부기가 가장 컸다'는 실험 결과. 6.2 kg은 1691 N",
+  },
+];
+
+/** 심장 진탕(가슴에 맞아 심장이 멈추는 현상) — 힘이 아니라 공 속도 기준이라 펀치와 바로 비교할 수 없다 */
+export const COMMOTIO_CORDIS_NOTE =
+  "어린 돼지 실험에서 야구공 시속 40~48 km(25~30 mph)부터 심실세동이 생기고 64 km/h(40 mph)에서 약 70%로 가장 잦았다. 심장 박동의 특정 순간(T파 정점 10~30 ms 전)에 맞을 때만 일어난다 (link2003). 힘(N) 기준이 없어 계산에는 쓰지 않는다.";
 
 /** 팔·다리 — 힘이 아니라 굽힘 모멘트(N·m) 기준 (넓적다리만 충격 힘 값도 있음) */
 export const LIMB_TOLERANCE: ThresholdEntry[] = [
@@ -380,14 +452,20 @@ const LOWER_LEG_PLAN: PartThresholdPlan = {
 
 const LIVER_PLAN: PartThresholdPlan = {
   method: "force",
-  value: { male: 6730, female: 6730 },
-  basis: "옆 복부(간·비장 포함) 6730 N",
-  sourceIds: ["yoganandan2007"],
+  value: { male: 1900, female: 1900 },
+  basis: "갈비뼈 아래쪽 비스듬한 충격에서 심각한 간 손상 1.9~2.1 kN 중 낮은 값 (작업 4: 옆 복부 6730 N에서 바꿈)",
+  sourceIds: ["yoganandan2000"],
 };
-const FRONT_TORSO_PLAN: PartThresholdPlan = {
-  ...FLANK_PLAN,
+const FRONT_CHEST_PLAN: PartThresholdPlan = {
   method: "borrowed",
-  basis: "정면 자료 없음 → 옆 가슴 5480 N을 빌려 씀",
+  value: { male: 4910, female: 4170 },
+  basis:
+    "정면 가슴 충격에서 평균 압축률이 AIS 3+ 50% 위험 압축률을 넘은 묶음의 평균 최대 힘 (남 4910 N / 여 4170 N). 힘 자체의 위험 기준이 아니라 추정",
+  sourceIds: ["kimpara2003"],
+};
+const FRONT_ABDOMEN_PLAN: PartThresholdPlan = {
+  ...FRONT_CHEST_PLAN,
+  basis: "정면 복부의 힘 기준 자료 없음 → 정면 가슴 값(남 4910 N / 여 4170 N)을 빌려 씀",
 };
 
 export const PART_THRESHOLD_PLAN: Record<BodyPart, PartThresholdPlan> = {
@@ -398,11 +476,11 @@ export const PART_THRESHOLD_PLAN: Record<BodyPart, PartThresholdPlan> = {
   forehead: HEAD_PLAN,
   templeLeft: HEAD_PLAN,
   templeRight: HEAD_PLAN,
-  solarPlexus: FRONT_TORSO_PLAN,
+  solarPlexus: FRONT_CHEST_PLAN,
   ribsLeft: FLANK_PLAN,
   ribsRight: FLANK_PLAN,
   liver: LIVER_PLAN,
-  abdomen: FRONT_TORSO_PLAN,
+  abdomen: FRONT_ABDOMEN_PLAN,
   upperArmLeft: UPPER_ARM_PLAN,
   upperArmRight: UPPER_ARM_PLAN,
   forearmLeft: FOREARM_PLAN,
@@ -417,8 +495,10 @@ export const PART_THRESHOLD_PLAN: Record<BodyPart, PartThresholdPlan> = {
 
 /** 자료를 찾지 못했거나 확인하지 못한 항목 */
 export const MEDICAL_GAPS: string[] = [
-  "몸통 앞(정면) 가슴·배의 사람 기준 힘 또는 강성 (원 논문이 유료라 확인하지 못함). 지금은 옆 가슴 값을 빌려 씀",
-  "종아리뼈(비골) 단독 기준",
-  "근육 타박상 기준값 (같은 힘에도 결과가 달라 기준이 없음)",
+  "명치 단독의 힘 기준. 지금은 정면 가슴 충격 자료(kimpara2003)로 추정",
+  "정면 복부의 힘 기준 (Cavanaugh 1986 막대 충격은 힘과 부상의 관계를 내지 못함). 지금은 정면 가슴 값을 빌려 씀",
+  "종아리뼈(비골) 단독의 동적 기준, 종아리 근육 타박 기준 (허벅지 근육 자료만 있음)",
+  "근육 타박의 50% 위험 기준 (barnes2022는 무게별 결과만 있음)",
+  "심장 진탕의 힘(N) 기준 (공 속도 기준만 있음)",
   "훅·어퍼컷·킥의 힘과 머리 가속도 관계",
 ];

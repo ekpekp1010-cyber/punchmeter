@@ -17,8 +17,13 @@ export type StrikeKind =
   | "hook"
   | "uppercut"
   | "roundhouseKick"
+  | "lowKick"
+  | "middleKick"
+  | "highKick"
   | "sideKick"
-  | "frontKick";
+  | "frontKick"
+  | "elbow"
+  | "knee";
 
 export interface EffectiveMassEntry extends RefValue {
   strike: StrikeKind;
@@ -85,6 +90,17 @@ export const EFFECTIVE_MASS: EffectiveMassEntry[] = [
     note: "검색 요약에서만 확인. 원문 페이지를 열지 못함",
   },
   {
+    strike: "jab",
+    method: "forceAccel",
+    value: 30.39,
+    unit: "kg",
+    population: "훈련된 남자 복서 30명",
+    sourceIds: ["kacprzak2025"],
+    confidence: "medium",
+    verifiedPrimary: true,
+    note: "±15.09kg (초록에서 확인). 같은 방법의 mosler2024 잽 18.95kg과 차이가 크다",
+  },
+  {
     strike: "roundhouseKick",
     method: "forceAccel",
     value: [18, 20.12],
@@ -117,8 +133,25 @@ export const EFFECTIVE_MASS: EffectiveMassEntry[] = [
   },
 ];
 
-/** 유효 질량 자료를 찾지 못한 타격 */
-export const EFFECTIVE_MASS_MISSING: StrikeKind[] = ["uppercut"];
+/**
+ * 유효 질량 자료를 찾지 못한 타격 (PLAN 작업 4에서 다시 찾아봄).
+ * 운동량 계산에 맞는 impulse 방법 값은 스트레이트(walilko2005·adamec2021)에만 있다.
+ * 나머지 기술은 PLAN 작업 6에서 분절 비율표(de Leva)로 어림하고 "추정"으로 표시한다.
+ */
+export const EFFECTIVE_MASS_MISSING: StrikeKind[] = ["uppercut", "elbow", "knee"];
+export const EFFECTIVE_MASS_IMPULSE_MISSING: StrikeKind[] = [
+  "jab",
+  "hook",
+  "uppercut",
+  "roundhouseKick",
+  "lowKick",
+  "middleKick",
+  "highKick",
+  "sideKick",
+  "frontKick",
+  "elbow",
+  "knee",
+];
 
 export interface BenchmarkEntry extends RefValue {
   strike: StrikeKind;
@@ -213,13 +246,169 @@ export const STRIKE_BENCHMARKS: BenchmarkEntry[] = [
     verifiedPrimary: true,
     note: "같은 리뷰의 충격력 범위는 172~6400 N",
   },
+  // ── PLAN 작업 4 (연구값 보강)에서 추가: 기술별 속도 ──
+  {
+    strike: "jab",
+    measure: "velocity",
+    value: 5.63,
+    unit: "m/s",
+    population: "복서 11명, 앞손 스트레이트, 닿는 순간 속도",
+    sourceIds: ["liu2022b"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±0.584 m/s. 뻗는 중 최고 속도는 7.31 ± 0.42 m/s",
+  },
+  {
+    strike: "jab",
+    measure: "velocity",
+    value: [6.317, 7.162],
+    unit: "m/s",
+    population: "중국 남자 복서 16명, 앞손 스트레이트 최고 속도 (주니어 6.317 / 엘리트 7.162)",
+    sourceIds: ["liu2022a"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "충격력 주니어 1035 N / 엘리트 1508 N",
+  },
+  {
+    strike: "hook",
+    measure: "velocity",
+    value: [8.9, 11.2],
+    unit: "m/s",
+    population: "뒷손 훅 최대 속도, 주니어 복서 8명 8.9 / 엘리트 15명 11.2 (관성 센서 옷)",
+    sourceIds: ["dinu2020"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "주니어 ±0.9, 엘리트 ±2.0 m/s. 같은 연구의 크로스는 8.1 m/s",
+  },
+  {
+    strike: "hook",
+    measure: "velocity",
+    value: 11.95,
+    unit: "m/s",
+    population: "아마추어 남자 복서 15명, 앞손 훅 주먹 최고 속도 (3차원 동작 분석)",
+    sourceIds: ["stanley2018"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±1.84 m/s (초록에서 확인)",
+  },
+  {
+    strike: "hook",
+    measure: "peakForce",
+    value: 4405,
+    unit: "N",
+    population: "올림픽 복서 11명, 더미 머리",
+    sourceIds: ["viano2005"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±2318 N, 손 속도 변화 11.0 ± 3.4 m/s (초록에서 확인)",
+  },
+  {
+    strike: "uppercut",
+    measure: "velocity",
+    value: [7.3, 10.2],
+    unit: "m/s",
+    population: "뒷손 어퍼컷 최대 속도, 주니어 8명 7.3 / 엘리트 15명 10.2",
+    sourceIds: ["dinu2020"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "주니어 ±1.0, 엘리트 ±1.8 m/s. 관성 센서로 추정한 힘은 엘리트 3242 ± 1767 N",
+  },
+  {
+    strike: "lowKick",
+    measure: "velocity",
+    value: 12.46,
+    unit: "m/s",
+    population: "프로 무에타이 선수 7명(평균 60.6kg), 2차원 영상",
+    sourceIds: ["praphanbundit2020"],
+    confidence: "low",
+    verifiedPrimary: true,
+    note: "±1.40 m/s. 몸의 어느 점을 쟀는지 밝히지 않음. 팔을 뒤로 휘두른 경우 12.19 m/s",
+  },
+  {
+    strike: "middleKick",
+    measure: "velocity",
+    value: 14.36,
+    unit: "m/s",
+    population: "위와 같은 연구",
+    sourceIds: ["praphanbundit2020"],
+    confidence: "low",
+    verifiedPrimary: true,
+    note: "±0.70 m/s. 같은 연구의 미들킥 힘 6321 N",
+  },
+  {
+    strike: "highKick",
+    measure: "velocity",
+    value: 7.22,
+    unit: "m/s",
+    population: "무에타이 선수 8명, 머리 높이 돌려차기, 닿는 순간 발 속도",
+    sourceIds: ["gavagan2017"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±1.47 m/s. 뻗는 중 최고 속도는 13.24 ± 2.30 m/s, 힘 1400 ± 419 N. praphanbundit2020의 하이킥은 10.89 m/s",
+  },
+  {
+    strike: "frontKick",
+    measure: "velocity",
+    value: 7.7,
+    unit: "m/s",
+    population: "남자 군인 25명, 발목 표식의 닿기 10 ms 전 속도",
+    sourceIds: ["vagner2019"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "±1.03 m/s. 평균 충격력 2202 ± 489 N. 리뷰(corcoran2024) 범위 5.2~16.7 m/s",
+  },
+  {
+    strike: "sideKick",
+    measure: "velocity",
+    value: [6.8, 9.5],
+    unit: "m/s",
+    population: "발 최고 속도, 초보 20명 6.8 / 숙련 20명 9.5 (120 Hz 영상)",
+    sourceIds: ["hidayat2025"],
+    confidence: "medium",
+    verifiedPrimary: true,
+    note: "초보 ±0.7, 숙련 ±0.8 m/s. 리뷰(corcoran2024) 범위 5.6~12.7 m/s",
+  },
+  {
+    strike: "elbow",
+    measure: "peakForce",
+    value: [2440, 4490],
+    unit: "N",
+    population: "호신술 숙련자 91명, 무릎 꿇고 내려치는 팔꿈치 (여 31명 2440 / 남 60명 4490)",
+    sourceIds: ["beranek2020"],
+    confidence: "high",
+    verifiedPrimary: true,
+    note: "여 ±960, 남 ±2020 N. 팔꿈치 속도 자료는 찾지 못함",
+  },
+  {
+    strike: "elbow",
+    measure: "peakForce",
+    value: 4677,
+    unit: "N",
+    population: "사관생도 16명, 힘 측정판",
+    sourceIds: ["vagner2024"],
+    confidence: "medium",
+    verifiedPrimary: true,
+    note: "±973 N. 논문 표에 오류가 있다고 확인됨",
+  },
+  {
+    strike: "knee",
+    measure: "velocity",
+    value: [7.8, 11.0],
+    unit: "m/s",
+    population: "무에타이 클럽 선수, 훈련 전 7.8 → 훈련 뒤 11.0 (한 묶음 약 4명)",
+    sourceIds: ["leemcgill2017"],
+    confidence: "low",
+    verifiedPrimary: true,
+    note: "표준편차가 지나치게 작고 숫자가 서로 맞지 않는 곳이 있어 낮은 믿음. 같은 연구의 뒷무릎 충격력 8242 → 9482 N",
+  },
 ];
 
 /**
- * 타격 강도 지수 100점 기준 (PRD: 펀치·킥별 공개 최고 충격력 기록 = 100).
- * 두 값 모두 리뷰 논문의 인용으로만 확인했다. 원 논문을 확인하면 verifiedPrimary를 바꾼다.
+ * 타격 강도 지수 100점 기준 (PRD: 펀치·킥·팔꿈치·무릎별 공개 최고 충격력 기록 = 100).
+ * 펀치·킥은 리뷰 논문의 인용으로만 확인했다. 원 논문을 확인하면 verifiedPrimary를 바꾼다.
+ * 기록을 찾지 못한 기술은 null → 강도 지수 "자료 없음".
  */
-export const MAX_FORCE_RECORD: Record<"punch" | "kick", RefValue> = {
+export const MAX_FORCE_RECORD: Record<"punch" | "kick" | "elbow" | "knee", RefValue | null> = {
   punch: {
     value: 5358,
     unit: "N",
@@ -236,4 +425,23 @@ export const MAX_FORCE_RECORD: Record<"punch" | "kick", RefValue> = {
     verifiedPrimary: false,
     note: "옆차기. 돌려차기 최고값은 6400 N (osullivan2009)",
   },
+  elbow: {
+    value: 10800,
+    unit: "N",
+    sourceIds: ["beranek2020"],
+    confidence: "medium",
+    verifiedPrimary: true,
+    note: "남성 팔꿈치 299회 중 최댓값 (표 2, 10.80 kN). 같은 논문 본문은 극단값을 포함하면 13,188.2 N이라고 해 표와 맞지 않는다",
+  },
+  // 무릎: 공개 최고 기록을 찾지 못함. leemcgill2017의 묶음 평균 9482 N은 기록이 아니고 믿음이 낮아 쓰지 않는다
+  knee: null,
 };
+
+/** 타격 자료에서 찾지 못한 것 (PLAN 작업 4) */
+export const STRIKE_DATA_GAPS: string[] = [
+  "카프킥(종아리 차기)의 속도·충격력 — 연구를 찾지 못함",
+  "팔꿈치 치기의 속도",
+  "무릎 치기의 공개 최고 충격력 기록",
+  "스트레이트 외 기술의 impulse 방식 유효 질량 (운동량 계산에 맞는 값)",
+  "정강이로 차는 로우킥의 3차원 측정 속도",
+];

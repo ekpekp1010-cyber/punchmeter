@@ -25,7 +25,7 @@ import {
   segmentMassKg,
   velocity,
 } from "./index";
-import { PART_THRESHOLD_PLAN } from "../reference";
+import { JOINT_LOCK_REFERENCE, PART_THRESHOLD_PLAN } from "../reference";
 
 describe("몸무게", () => {
   it("계체량 70kg이면 리게인 75.25kg", () => {
@@ -147,6 +147,34 @@ describe("타격 강도 지수", () => {
   it("킥은 킥 최고 기록(9015N) 기준", () => {
     expect(intensityIndex(4507.5, "kick")).toBeCloseTo(50, 6);
   });
+
+  it("팔꿈치는 팔꿈치 최고 기록(10800N) 기준", () => {
+    expect(intensityIndex(5400, "elbow")).toBeCloseTo(50, 6);
+  });
+
+  it("무릎은 공개 최고 기록이 없어 '자료 없음'(null)", () => {
+    expect(intensityIndex(3000, "knee")).toBeNull();
+  });
+});
+
+describe("관절기 참고값", () => {
+  it("관절기 6가지 모두 정상 범위 자료가 있다", () => {
+    const locks = Object.values(JOINT_LOCK_REFERENCE);
+    expect(locks).toHaveLength(6);
+    for (const lock of locks) expect(lock.normalRange).not.toBeNull();
+  });
+
+  it("부상 각도 자료가 없는 암바·기무라·아메리카나·앵클록은 숫자를 지어내지 않고 비워 둔다", () => {
+    for (const id of ["armbar", "kimura", "americana", "ankleLock"] as const) {
+      expect(JOINT_LOCK_REFERENCE[id].injuryAngle).toBeNull();
+    }
+  });
+
+  it("힐훅의 부상 각도(58°)는 정상 범위(17.5~20°)보다 크다", () => {
+    const heel = JOINT_LOCK_REFERENCE.heelHook;
+    expect(heel.injuryAngle?.value).toBe(58);
+    expect(heel.normalRange?.male.value).toEqual([17.5, 20]);
+  });
 });
 
 describe("한계 힘 환산", () => {
@@ -180,10 +208,18 @@ describe("한계 힘 환산", () => {
     expect(Object.keys(PART_THRESHOLD_PLAN)).toHaveLength(22);
   });
 
-  it("간은 옆 복부 연구값(6730N)이 이미 힘이라 추정 표시가 없다", () => {
+  it("간은 비스듬한 충격의 간 손상 연구값(1.9~2.1kN 중 1900N)이 이미 힘이라 추정 표시가 없다", () => {
     const t = partThreshold("liver", "male", 175);
-    expect(t.forceN).toBe(6730);
+    expect(t.forceN).toBe(1900);
     expect(t.estimated).toBe(false);
+  });
+
+  it("명치는 정면 가슴 자료로 추정하며, 여성(4170N)이 남성(4910N)보다 낮다", () => {
+    const male = partThreshold("solarPlexus", "male", 175);
+    const female = partThreshold("solarPlexus", "female", 165);
+    expect(male.forceN).toBe(4910);
+    expect(female.forceN).toBe(4170);
+    expect(male.estimated).toBe(true);
   });
 
   it("종아리와 정강이는 같은 정강이뼈 기준이라 한계 힘이 같다", () => {

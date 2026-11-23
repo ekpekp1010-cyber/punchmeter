@@ -4,3 +4,4 @@ export * from "./strikes";
 export * from "./gloves";
 export * from "./medical";
 export * from "./segments";
+export * from "./jointLocks";

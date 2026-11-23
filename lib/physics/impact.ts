@@ -1,7 +1,7 @@
 // Design Ref: §2.2 처리 ⑧·⑨ — 운동량·운동에너지·추정 충격력·글러브 보정·강도 지수
 
 import { GLOVE_PEAK_FORCE, MAX_FORCE_RECORD, STRIKE_BENCHMARKS, EFFECTIVE_MASS } from "../reference";
-import type { GloveOz } from "../types";
+import type { GloveOz, TechniqueKind } from "../types";
 
 export type Limb = "punch" | "kick";
 
@@ -67,9 +67,13 @@ export function gloveForceFactor(gloveOz: GloveOz, limb: Limb): GloveFactor {
   return { factor: target / base, basis: "measured" };
 }
 
-/** 타격 강도 지수(0~100) = 충격력 ÷ 공개 최고 충격력 기록 × 100, 100을 넘으면 100 */
-export function intensityIndex(forceN: number, limb: Limb): number {
-  const record = MAX_FORCE_RECORD[limb].value;
-  if (typeof record !== "number") throw new Error("최고 기록 값이 없습니다");
-  return Math.min(100, (forceN / record) * 100);
+/**
+ * 타격 강도 지수(0~100) = 충격력 ÷ 공개 최고 충격력 기록 × 100, 100을 넘으면 100.
+ * 그 기술의 최고 기록이 없으면(무릎) null → "자료 없음".
+ */
+export function intensityIndex(forceN: number, kind: TechniqueKind): number | null {
+  const record = MAX_FORCE_RECORD[kind];
+  if (record === null) return null;
+  if (typeof record.value !== "number") throw new Error("최고 기록 값이 한 숫자가 아닙니다");
+  return Math.min(100, (forceN / record.value) * 100);
 }

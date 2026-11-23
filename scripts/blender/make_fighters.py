@@ -5,6 +5,7 @@
 # - 뼈대는 게임용 "game_engine" (53개 뼈, upperarm_l·lowerarm_l 같은 이름)을 쓴다. 코드로 팔다리를 움직이기 쉽다.
 # - 피부는 일반 피부를 쓰고, 여자 선수는 자산 팩의 운동복(크롭 상의 + 레깅스)을 입힌다.
 #   (자산 팩에 격투기 반바지가 없다. "special suit" 피부는 온몸을 덮는 무늬 옷이라 쓰지 않는다)
+#   남자 선수는 허리~허벅지 가운데 면을 반바지 색 재질로 칠한다 (paint_shorts).
 # - 재질은 웹(three.js)에서 그대로 읽히도록 GAMEENGINE(기본 PBR) 방식으로 만든다.
 # - 파일 크기를 줄이려고 그림(텍스처)은 긴 변 1024px 이하로 줄인다.
 import os
@@ -24,10 +25,17 @@ DATA = LocationService.get_user_data()
 MAX_TEXTURE_PX = 1024
 
 FIGHTERS = {
-    # 이름: (gender 값 1=남 0=여, 피부, 입힐 옷 목록)
-    "fighter_male": (1.0, "young_caucasian_male", []),
-    "fighter_female": (0.0, "young_caucasian_female", ["female_sportsuit01"]),
+    # 이름: (gender 값 1=남 0=여, 피부, 입힐 옷 목록, 반바지 색 RGB 또는 None)
+    "fighter_male": (1.0, "young_caucasian_male", [], (0.55, 0.06, 0.08)),
+    "fighter_female": (0.0, "young_caucasian_female", ["female_sportsuit01"], None),
 }
+
+# 반바지 범위 (그림용 모양 값, 계산에 쓰지 않음)
+# 위쪽 = 골반 뼈와 spine_01 뼈 사이에서 이 비율만큼 위, 아래쪽 = 허벅지 뼈 길이의 이 비율만큼 내려온 곳
+SHORTS_TOP_RATIO = 1.0
+SHORTS_BOTTOM_RATIO = 0.45
+# 반바지로 칠할 수 있는 뼈 (이 뼈의 영향이 가장 큰 면만 칠한다 → 옆에 내린 손·팔은 칠하지 않음)
+SHORTS_BONES = {"pelvis", "spine_01", "thigh_l", "thigh_r"}
 
 # 눈·눈썹·속눈썹 (자산 팩의 CC0 자료)
 EXTRAS = [
@@ -76,7 +84,57 @@ def fix_materials_for_web() -> None:
         mat.surface_render_method = "DITHERED"
 
 
-def make_fighter(name: str, gender: float, skin: str, clothes: list[str]) -> None:
+def paint_shorts(basemesh, rig, rgb: tuple[float, float, float]) -> int:
+    """
+    몸 메시의 허리~허벅지 가운데 면을 반바지 재질로 바꾼다 (옷 메시를 따로 만들지 않고 몸에 칠하는 방식).
+    면의 높이와 그 면에 가장 크게 영향을 주는 뼈로 고른다. 칠한 면 수를 돌려준다.
+    """
+    bones = rig.data.bones
+    to_world = rig.matrix_world
+
+    def head_z(bone_name: str) -> float:
+        return (to_world @ bones[bone_name].head_local).z
+
+    pelvis_z, spine_z = head_z("pelvis"), head_z("spine_01")
+    thigh_top = head_z("thigh_l")
+    thigh_len = thigh_top - head_z("calf_l")
+    top = pelvis_z + (spine_z - pelvis_z) * SHORTS_TOP_RATIO
+    bottom = thigh_top - thigh_len * SHORTS_BOTTOM_RATIO
+
+    mesh = basemesh.data
+    group_names = {g.index: g.name for g in basemesh.vertex_groups}
+
+    def main_bone(vertex) -> str | None:
+        best = max(
+            (g for g in vertex.groups if group_names.get(g.group) in bones),
+            key=lambda g: g.weight,
+            default=None,
+        )
+        return group_names[best.group] if best else None
+
+    vertex_ok = [
+        bottom <= (basemesh.matrix_world @ v.co).z <= top and main_bone(v) in SHORTS_BONES for v in mesh.vertices
+    ]
+
+    shorts = bpy.data.materials.new(f"{basemesh.name}.shorts")
+    shorts.use_nodes = True
+    bsdf = next(n for n in shorts.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.75
+    shorts.use_backface_culling = True
+    mesh.materials.append(shorts)
+    index = len(mesh.materials) - 1
+
+    # 꼭짓점 절반 이상이 범위 안이면 칠한다 (모두 요구하면 허리선이 계단처럼 파인다)
+    painted = 0
+    for poly in mesh.polygons:
+        if sum(vertex_ok[i] for i in poly.vertices) * 2 >= len(poly.vertices):
+            poly.material_index = index
+            painted += 1
+    return painted
+
+
+def make_fighter(name: str, gender: float, skin: str, clothes: list[str], shorts_rgb) -> None:
     # 빈 장면에서 시작한다
     bpy.ops.wm.read_homefile(use_empty=True)
 
@@ -107,6 +165,8 @@ def make_fighter(name: str, gender: float, skin: str, clothes: list[str]) -> Non
                 obj.modifiers.remove(modifier)
 
     fix_materials_for_web()
+    if shorts_rgb is not None:
+        print(f"[반바지] {name}: 면 {paint_shorts(basemesh, rig, shorts_rgb)}개 칠함")
 
     # 그림 크기 줄이기
     for image in bpy.data.images:
@@ -143,5 +203,5 @@ def make_fighter(name: str, gender: float, skin: str, clothes: list[str]) -> Non
 
 
 os.makedirs(OUT_DIR, exist_ok=True)
-for fighter_name, (gender_value, skin_name, cloth_names) in FIGHTERS.items():
-    make_fighter(fighter_name, gender_value, skin_name, cloth_names)
+for fighter_name, (gender_value, skin_name, cloth_names, shorts_color) in FIGHTERS.items():
+    make_fighter(fighter_name, gender_value, skin_name, cloth_names, shorts_color)

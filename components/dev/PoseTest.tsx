@@ -4,9 +4,10 @@
 // PLAN 작업 4: 관절 찾기 시험 화면. 실제 서비스 화면이 아니라 정확도를 눈으로 확인하는 시험용이다.
 
 import { useEffect, useRef, useState } from "react";
-import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
+import type { Landmark, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { createVideoPoseLandmarker, LANDMARK, PoseLandmarker } from "@/lib/engine/poseLandmarker";
 import { drawBodyFigure, drawSkeleton } from "@/components/result/bodyFigure";
+import { Figure3DScene } from "@/components/result/bodyFigure3D";
 
 /** 사람마다 다른 색 (찾은 순서. 같은 사람을 이어서 따라가는 기능은 PLAN 작업 8에서 만든다) */
 const PERSON_COLORS = ["#ef4444", "#3b82f6"];
@@ -17,7 +18,13 @@ const KEY_JOINTS = [LANDMARK.leftWrist, LANDMARK.rightWrist, LANDMARK.leftAnkle,
 /** 재생 속도 선택지 (느릴수록 장면을 덜 놓친다) */
 const SPEEDS = [0.25, 0.5, 1] as const;
 
-type ViewMode = "figure" | "joints";
+type ViewMode = "3d" | "figure" | "joints";
+
+/** 한 장면에서 찾은 결과 (화면 기준 위치 + 실제 크기 3D 위치) */
+interface Found {
+  image: NormalizedLandmark[][];
+  world: Landmark[][];
+}
 
 interface Stats {
   frames: number;
@@ -55,8 +62,12 @@ export default function PoseTest() {
   /** detectForVideo에 마지막으로 보낸 시각. 다시 시작해도 계속 늘어나야 해서 회차와 상관없이 유지한다 */
   const lastTimestampRef = useRef(-1);
   /** 마지막으로 찾은 사람들 (멈춘 상태에서 보기 방식을 바꿀 때 다시 그리기용) */
-  const lastPeopleRef = useRef<NormalizedLandmark[][]>([]);
-  const viewModeRef = useRef<ViewMode>("figure");
+  const lastFoundRef = useRef<Found>({ image: [], world: [] });
+  const viewModeRef = useRef<ViewMode>("3d");
+  const view3dRef = useRef<HTMLDivElement>(null);
+  const scene3dRef = useRef<Figure3DScene | null>(null);
+  /** 영상의 가로÷세로 비율 (3D에서 두 사람 간격 어림용) */
+  const aspectRef = useRef(16 / 9);
 
   const [status, setStatus] = useState("관절 찾기 도구를 불러오는 중…");
   const [ready, setReady] = useState(false);
@@ -64,7 +75,18 @@ export default function PoseTest() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [speed, setSpeed] = useState<number>(0.25);
-  const [viewMode, setViewMode] = useState<ViewMode>("figure");
+  const [viewMode, setViewMode] = useState<ViewMode>("3d");
+
+  // 3D 장면 준비 (화면을 떠나면 그래픽 자원을 정리한다)
+  useEffect(() => {
+    const container = view3dRef.current;
+    if (!container) return;
+    const scene = new Figure3DScene(container, PERSON_COLORS);
+    scene3dRef.current = scene;    return () => {
+      scene.dispose();
+      scene3dRef.current = null;
+    };
+  }, []);
 
   // 관절 찾기 도구 준비
   useEffect(() => {
@@ -99,13 +121,17 @@ export default function PoseTest() {
   }, [videoUrl]);
 
   /** 오른쪽 칸에 찾은 사람들을 그린다 */
-  function draw(people: NormalizedLandmark[][]) {
+  function draw(found: Found) {
+    if (viewModeRef.current === "3d") {
+      scene3dRef.current?.update(found.world, found.image, aspectRef.current);
+      return;
+    }
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
     ctx.fillStyle = "#111827";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    people.forEach((person, i) => {
+    found.image.forEach((person, i) => {
       const color = PERSON_COLORS[i % PERSON_COLORS.length];
       if (viewModeRef.current === "figure") drawBodyFigure(ctx, person, canvas.width, canvas.height, color);
       else drawSkeleton(ctx, person, canvas.width, canvas.height, color);
@@ -125,7 +151,7 @@ export default function PoseTest() {
     if (!file) return;
     stopLoop();
     setAnalyzing(false);
-    lastPeopleRef.current = [];
+    lastFoundRef.current = { image: [], world: [] };
     // 영상은 이 브라우저 안에서만 쓰는 임시 주소로 연다 (서버로 보내지 않음)
     setVideoUrl(URL.createObjectURL(file));
     setStats(EMPTY_STATS);
@@ -146,7 +172,7 @@ export default function PoseTest() {
   function onChangeView(value: ViewMode) {
     setViewMode(value);
     viewModeRef.current = value;
-    draw(lastPeopleRef.current); // 멈춘 상태에서도 바로 바뀌어 보이게
+    draw(lastFoundRef.current); // 멈춘 상태에서도 바로 바뀌어 보이게
   }
 
   function start() {
@@ -161,6 +187,7 @@ export default function PoseTest() {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    if (video.videoHeight > 0) aspectRef.current = video.videoWidth / video.videoHeight;
     setStats(EMPTY_STATS);
     setAnalyzing(true);
     setStatus("분석 중… (영상을 재생하며 장면마다 관절을 찾아요)");
@@ -199,16 +226,18 @@ export default function PoseTest() {
       const timestampMs = Math.max(metadata.mediaTime * 1000, lastTimestampRef.current + 1);
       lastTimestampRef.current = timestampMs;
 
-      let people: NormalizedLandmark[][];
+      let found: Found;
       const t0 = performance.now();
       try {
-        people = landmarker.detectForVideo(video, timestampMs).landmarks;
+        const result = landmarker.detectForVideo(video, timestampMs);
+        found = { image: result.landmarks, world: result.worldLandmarks };
       } catch (error) {
         setStatus(`이 장면을 분석하다 오류가 났어요: ${String(error)}`);
         return;
       }
       totalMs += performance.now() - t0;
       frames += 1;
+      const people = found.image;
 
       if (people.length === 0) withZero += 1;
       else if (people.length === 1) withOne += 1;
@@ -234,8 +263,8 @@ export default function PoseTest() {
       }
       lastPresented = metadata.presentedFrames;
 
-      lastPeopleRef.current = people;
-      draw(people);
+      lastFoundRef.current = found;
+      draw(found);
 
       if (frames % 10 === 0) setStats(snapshot());
     };
@@ -302,10 +331,16 @@ export default function PoseTest() {
             onChange={(e) => onChangeView(e.target.value as ViewMode)}
             className="rounded border px-2 py-1"
           >
-            <option value="figure">사람 형체</option>
+            <option value="3d">3D 사람 모델</option>
+            <option value="figure">2D 사람 형체</option>
             <option value="joints">관절 점</option>
           </select>
         </label>
+        {viewMode === "3d" && (
+          <button type="button" onClick={() => scene3dRef.current?.resetView()} className="rounded border px-3 py-1 text-sm">
+            시점 되돌리기
+          </button>
+        )}
       </div>
       <p className="text-sm">{status}</p>
 
@@ -320,7 +355,14 @@ export default function PoseTest() {
         </div>
         <div>
           <h2 className="mb-1 font-semibold">분석 시뮬레이션 (빨강·파랑 = 찾은 사람 순서)</h2>
-          <canvas ref={canvasRef} className="aspect-video w-full rounded bg-gray-900" />
+          {/* 두 칸 모두 늘 만들어 두고 보기 방식에 따라 하나만 보인다 (전환해도 준비된 3D 장면이 사라지지 않게) */}
+          <div ref={view3dRef} className={`aspect-video w-full overflow-hidden rounded bg-gray-900 ${viewMode === "3d" ? "" : "hidden"}`} />
+          <canvas ref={canvasRef} className={`aspect-video w-full rounded bg-gray-900 ${viewMode === "3d" ? "hidden" : ""}`} />
+          {viewMode === "3d" && (
+            <p className="mt-1 text-xs text-gray-500">
+              마우스 왼쪽 끌기: 돌리기 · 휠: 확대/축소 · 오른쪽 끌기: 옮기기. 두 사람의 앞뒤 거리는 영상만으로 알 수 없어 같은 줄에 세워 보여요.
+            </p>
+          )}
         </div>
       </div>
 

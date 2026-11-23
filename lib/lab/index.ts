@@ -5,3 +5,4 @@ export * from "./accumulate";
 export * from "./jointLock";
 export * from "./result";
 export * from "./fighterInput";
+export * from "./combo";

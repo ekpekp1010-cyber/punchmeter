@@ -16,10 +16,10 @@ import StrikePicker, { PLAYABLE, checkSpeed, type StrikeDraft } from "@/componen
 import PlaybackBar, { type Rate } from "@/components/scene/PlaybackBar";
 import Stage3D from "@/components/scene/Stage3D";
 import type { Stage } from "@/components/scene/stage";
-import { accumulateLoads, buildStrikeResult, judgeJointLock } from "@/lib/lab";
+import { accumulateLoads, buildStrikeResult, isMoveStep, judgeJointLock, strikeIndexOf, strikesOf } from "@/lib/lab";
 import { buildCsv, exportBaseName } from "@/lib/export/csv";
 import { checkFighter, toDraft, type FighterCheck, type FighterDraft } from "@/lib/lab/fighterInput";
-import type { Fighter, FighterId, PartLoad, StrikeResult, StrikeStep } from "@/lib/types";
+import type { ComboItem, Fighter, FighterId, PartLoad, StrikeResult } from "@/lib/types";
 
 /** 처음 기술 칸 값 */
 const INITIAL_STRIKE: StrikeDraft = {
@@ -29,6 +29,7 @@ const INITIAL_STRIKE: StrikeDraft = {
   target: "jaw",
   speed: "9.14",
   defense: "none",
+  move: null,
 };
 
 /** 처음 화면의 선수 값 (입력 예시) */
@@ -57,14 +58,17 @@ interface Playback {
   current: number;
   /** 지금까지 닿은 타격 수 */
   contacted: number;
+  /** 마지막으로 닿은 칸의 연타 목록 순서 (없으면 −1) */
+  contactedAt: number;
   /** 마지막으로 닿은 타격이 노린 곳에 닿았는가 */
   reached: boolean;
 }
 
-const IDLE: Playback = { playing: false, paused: false, current: -1, contacted: 0, reached: true };
+const IDLE: Playback = { playing: false, paused: false, current: -1, contacted: 0, contactedAt: -1, reached: true };
 
-/** 기술 칸 → 연타 한 칸 (속도가 올바를 때만) */
-function toStep(d: StrikeDraft): StrikeStep | null {
+/** 기술 칸 → 연타 한 칸 (빽스텝은 움직임 칸, 타격은 속도가 올바를 때만) */
+function toStep(d: StrikeDraft): ComboItem | null {
+  if (d.move) return { kind: "move", fighter: d.attacker, move: d.move };
   const speed = checkSpeed(d);
   if (speed.speedMps === null || !PLAYABLE.includes(d.technique)) return null;
   return {
@@ -92,7 +96,7 @@ export default function LabPage() {
   const allValid = state.A.check.fighter !== null && state.B.check.fighter !== null;
 
   const [strike, setStrike] = useState<StrikeDraft>(INITIAL_STRIKE);
-  const [combo, setCombo] = useState<StrikeStep[]>([]);
+  const [combo, setCombo] = useState<ComboItem[]>([]);
   const [rate, setRate] = useState<Rate>(0.25);
   const [playback, setPlayback] = useState<Playback>(IDLE);
   const [results, setResults] = useState<StrikeResult[]>([]);
@@ -101,16 +105,19 @@ export default function LabPage() {
   /** 재생할 때의 선수 정보 (누적 계산은 이 값으로) */
   const [playedFighters, setPlayedFighters] = useState<Record<FighterId, Fighter> | null>(null);
   const stageRef = useRef<Stage | null>(null);
+  /** 재생한 연타 목록 (닿은 칸 순서 → 결과 순서로 바꿀 때 쓴다. 빽스텝은 결과가 없다) */
+  const playedItemsRef = useRef<ComboItem[]>([]);
 
   const onStageReady = useCallback((stage: Stage) => {
     stageRef.current = stage;
     // 개발 중 확인용: 브라우저 콘솔에서 무대를 살펴볼 수 있게 (배포 빌드에서는 빠짐)
     if (process.env.NODE_ENV === "development") (window as unknown as { __stage?: Stage }).__stage = stage;
     stage.setPlaybackEvents({
-      onStart: (_s, index) => setPlayback((p) => ({ ...p, playing: true, current: index })),
+      onStart: (index) => setPlayback((p) => ({ ...p, playing: true, current: index })),
       onContact: (s, index) => {
-        setPlayback((p) => ({ ...p, contacted: index + 1, reached: s.reached }));
-        setSelected(index);
+        const resultIndex = strikeIndexOf(playedItemsRef.current, index);
+        setPlayback((p) => ({ ...p, contacted: resultIndex + 1, contactedAt: index, reached: s.reached }));
+        setSelected(resultIndex);
       },
       onEnd: () => setPlayback((p) => ({ ...p, playing: false, paused: false, current: -1 })),
     });
@@ -127,14 +134,20 @@ export default function LabPage() {
     if (!stage || !canPlay || !a || !b) return;
     const fighters = { A: a, B: b };
     // 숫자 계산은 재생 전에 한 번에 (닿는 시각은 3D 재생 계획이 정하므로 0으로 두고 표시하지 않는다)
-    setResults(steps.map((st) => buildStrikeResult(st, fighters[st.attacker], fighters[st.attacker === "A" ? "B" : "A"], 0)));
+    // 빽스텝(움직임)은 계산 숫자가 없어 결과에서 빠진다
+    setResults(strikesOf(steps).map((st) => buildStrikeResult(st, fighters[st.attacker], fighters[st.attacker === "A" ? "B" : "A"], 0)));
     setSelected(0);
     setPlayback({ ...IDLE, playing: true, current: 0 });
     setHasPlayed(true);
     setLockDraft((d) => ({ ...d, open: false }));
     setPlayedFighters(fighters);
+    playedItemsRef.current = steps;
     stage.playSequence(
-      steps.map((st) => ({ attacker: st.attacker, technique: st.technique, side: st.side, target: st.target, speedMps: st.speedMps, defense: st.defense })),
+      steps.map((st) =>
+        isMoveStep(st)
+          ? st
+          : { attacker: st.attacker, technique: st.technique, side: st.side, target: st.target, speedMps: st.speedMps, defense: st.defense },
+      ),
       rate,
     );
   };
@@ -263,7 +276,7 @@ export default function LabPage() {
           />
           <p className="text-xs text-zinc-400" role="status">
             {playback.playing
-              ? playback.contacted > playback.current
+              ? playback.contactedAt === playback.current
                 ? playback.reached
                   ? "닿음 — 닿는 순간 끝점(주먹·발·무릎·팔꿈치) 속도가 정한 속도와 같아요"
                   : "노린 곳까지 다 닿지 못했어요 — 두 선수 키 차이가 커서 몸이 겹치지 않는 거리에서는 닿지 않아요 (숫자 계산에는 영향 없음)"

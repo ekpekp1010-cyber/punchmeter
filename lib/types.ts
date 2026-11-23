@@ -145,6 +145,20 @@ export interface StrikeStep {
   defense: Defense;
 }
 
+/** 움직임 (타격이 아니라 계산 숫자가 없다). 빽스텝 = 뒤로 한 걸음 물러나기 */
+export type MoveId = "backStep";
+
+/** 연타 목록의 움직임 한 칸 (사용자 요청: 빽스텝 뒤에 타격이 오면 앞으로 걸어 들어가 붙어서 친다) */
+export interface MoveStep {
+  kind: "move";
+  /** 움직이는 선수 */
+  fighter: FighterId;
+  move: MoveId;
+}
+
+/** 연타 목록 한 칸: 타격 또는 움직임 */
+export type ComboItem = StrikeStep | MoveStep;
+
 /** 의학적 판단 하나 */
 export interface MedicalJudgment {
   part: BodyPart;

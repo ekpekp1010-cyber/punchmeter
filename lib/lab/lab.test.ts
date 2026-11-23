@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import { partThreshold } from "../physics";
-import type { Fighter, StrikeStep } from "../types";
-import { accumulateLoads, buildStrikeResult, judgeJointLock, medicalJudgment, resolveHitPart } from "./index";
+import type { ComboItem, Fighter, MoveStep, StrikeStep } from "../types";
+import { accumulateLoads, buildStrikeResult, isMoveStep, judgeJointLock, medicalJudgment, resolveHitPart, strikeIndexOf, strikesOf } from "./index";
 
 const A: Fighter = { id: "A", sex: "male", weighInKg: 70, heightCm: 175, gloveOz: 10 };
 const B: Fighter = { id: "B", sex: "female", weighInKg: 60, heightCm: 165, gloveOz: 10 };
@@ -133,5 +133,20 @@ describe("9. 관절기 판단", () => {
     const j = judgeJointLock("B", "ankleLock", 40, A);
     expect(j.overNormalDeg).toBeLessThan(0);
     expect(j.text).toContain("정상 범위(54.6°) 안");
+  });
+});
+
+describe("연타 목록 (빽스텝 섞기)", () => {
+  const jab: StrikeStep = { attacker: "A", technique: "jab", side: "lead", target: "jaw", speedMps: 6, speedBasis: "research", defense: "none" };
+  const back: MoveStep = { kind: "move", fighter: "A", move: "backStep" };
+  const items: ComboItem[] = [jab, back, { ...jab, technique: "cross", side: "rear" }];
+
+  it("움직임은 결과 계산에서 빠지고, 타격 순서는 타격만 세어 정한다", () => {
+    expect(isMoveStep(back)).toBe(true);
+    expect(isMoveStep(jab)).toBe(false);
+    expect(strikesOf(items).map((s) => s.technique)).toEqual(["jab", "cross"]);
+    expect(strikeIndexOf(items, 0)).toBe(0);
+    expect(strikeIndexOf(items, 1)).toBe(-1);
+    expect(strikeIndexOf(items, 2)).toBe(1);
   });
 });

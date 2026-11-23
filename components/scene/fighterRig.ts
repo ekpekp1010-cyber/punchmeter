@@ -50,6 +50,13 @@ const BOUNCE = {
   heelLift: 0.7,
 };
 
+/** 걸음(빽스텝·앞스텝) 모양 — 그림용 값. 발마다 걸음 진행 중 언제 떼서 언제 딛는지(0~1)와 드는 높이 */
+const STEP = {
+  firstFoot: [0, 0.6] as [number, number],
+  secondFoot: [0.4, 1] as [number, number],
+  liftM: 0.05,
+};
+
 /** 기본 자세에서 몸통(척추)을 골반보다 더 비트는 각도(°, 왼 어깨가 앞으로) — 그림용 */
 const STANCE_TWIST_DEG = -8;
 /** 목이 몸통 회전을 되돌리는 비율 (얼굴은 상대를 보게) */
@@ -416,6 +423,26 @@ export class FighterRig {
       this.reachLeg(side, ankle, pole, 1, toe);
       // 발을 숙여 발볼이 원래 자리(바닥)를 향하게 — 뒤꿈치만 들린다
       this.aim(this.bone(`foot_${side}`), this.bone(`ball_${side}`), balls[side]);
+    }
+  }
+
+  /**
+   * 걸음 (빽스텝·앞스텝, 그림용): 몸이 시작 자리에서 delta(월드)만큼 옮겨 가는 중이고 지금 k(0~1)만큼 왔을 때
+   * 두 발을 한 발씩 들어 옮긴다. 가는 쪽 발이 먼저(앞으로 가면 앞발, 뒤로 가면 뒷발) 떼고 다른 발이 따라온다.
+   * beginFrame과 팔 자세 뒤에 부른다 (발만 다시 놓는다).
+   */
+  stepFeet(delta: THREE.Vector3, k: number) {
+    const forwardMove = delta.dot(this.forward()) > 0;
+    const first: ArmSide = forwardMove ? LEAD_SIDE : LEAD_SIDE === "l" ? "r" : "l";
+    for (const side of ["l", "r"] as const) {
+      const [a, b] = side === first ? STEP.firstFoot : STEP.secondFoot;
+      const f = THREE.MathUtils.smoothstep(k, a, b);
+      // 발은 시작 자리에서 f만큼, 몸은 k만큼 왔으므로 서는 자리에서 (f − k)만큼 어긋나 있다
+      const ankle = this.stanceAnkle(side).addScaledVector(delta, f - k);
+      ankle.y += Math.sin(Math.PI * f) * STEP.liftM * this.scale;
+      const toe = this.stanceToe(side);
+      const pole = this.hip(side).add(new THREE.Vector3(toe.x, 0, toe.z).normalize());
+      this.reachLeg(side, ankle, pole, 1, toe);
     }
   }
 

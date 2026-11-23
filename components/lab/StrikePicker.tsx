@@ -5,7 +5,8 @@
 
 import { useId } from "react";
 import { BODY_PARTS, TECHNIQUES, bodyPartInfo, shortCite, sideCanTarget, techniqueInfo } from "@/lib/reference";
-import type { Defense, FighterId, StrikeSide, TechniqueId } from "@/lib/types";
+import { MOVE_NAME_KO } from "@/lib/lab/combo";
+import type { Defense, FighterId, MoveId, StrikeSide, TechniqueId } from "@/lib/types";
 
 /** 3D로 재생할 수 있는 기술 (PLAN 작업 11: 펀치, 작업 12: 킥·팔꿈치·무릎) */
 export const PLAYABLE: TechniqueId[] = TECHNIQUES.map((t) => t.id);
@@ -18,6 +19,8 @@ export interface StrikeDraft {
   /** 속도 칸 글자 */
   speed: string;
   defense: Defense;
+  /** 움직임(빽스텝)을 골랐으면 그 움직임, 타격이면 null */
+  move: MoveId | null;
 }
 
 /** 그 기술·손으로 노릴 수 있는 부위 */
@@ -35,7 +38,7 @@ function fixTarget(d: StrikeDraft): StrikeDraft {
 export function draftForTechnique(prev: StrikeDraft, technique: TechniqueId): StrikeDraft {
   const info = techniqueInfo(technique);
   const side: StrikeSide = technique === "jab" ? "lead" : technique === "cross" ? "rear" : prev.side;
-  return fixTarget({ ...prev, technique, side, speed: info.speed ? String(info.speed.defaultMps) : "" });
+  return fixTarget({ ...prev, technique, side, speed: info.speed ? String(info.speed.defaultMps) : "", move: null });
 }
 
 /** 속도 칸 검사: 연구 범위 안이면 연구값, 자료 없는 기술은 사용자 입력값 */
@@ -66,16 +69,17 @@ export default function StrikePicker({ draft, onChange }: Props) {
   const speed = checkSpeed(draft);
   const set = (patch: Partial<StrikeDraft>) => onChange({ ...draft, ...patch });
   const fixedSide = draft.technique === "jab" || draft.technique === "cross";
+  const moving = draft.move !== null;
 
   return (
     <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3 text-sm" aria-label="기술 고르기">
       <h2 className="text-sm font-semibold">기술</h2>
 
-      <div className="flex items-center gap-1" role="radiogroup" aria-label="때리는 선수">
-        <span className="w-14 shrink-0 text-zinc-400">공격</span>
+      <div className="flex items-center gap-1" role="radiogroup" aria-label={moving ? "움직이는 선수" : "때리는 선수"}>
+        <span className="w-14 shrink-0 text-zinc-400">{moving ? "선수" : "공격"}</span>
         {(["A", "B"] as const).map((id) => (
           <button key={id} type="button" role="radio" aria-checked={draft.attacker === id} onClick={() => set({ attacker: id })} className={btn(draft.attacker === id)}>
-            선수 {id} → {id === "A" ? "B" : "A"}
+            {moving ? `선수 ${id}` : `선수 ${id} → ${id === "A" ? "B" : "A"}`}
           </button>
         ))}
       </div>
@@ -88,17 +92,34 @@ export default function StrikePicker({ draft, onChange }: Props) {
               key={t.id}
               type="button"
               role="radio"
-              aria-checked={draft.technique === t.id}
+              aria-checked={!moving && draft.technique === t.id}
               disabled={!playable}
               title={playable ? undefined : "3D 동작은 다음 작업에서 추가돼요"}
               onClick={() => onChange(draftForTechnique(draft, t.id))}
-              className={`${btn(draft.technique === t.id)} disabled:cursor-not-allowed disabled:opacity-40`}
+              className={`${btn(!moving && draft.technique === t.id)} disabled:cursor-not-allowed disabled:opacity-40`}
             >
               {t.nameKo}
             </button>
           );
         })}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={draft.move === "backStep"}
+          onClick={() => set({ move: "backStep" })}
+          className={`${btn(draft.move === "backStep")} border border-dashed border-zinc-600`}
+        >
+          {MOVE_NAME_KO.backStep}
+        </button>
       </div>
+
+      {moving ? (
+        <p className="text-xs text-zinc-400">
+          선수 {draft.attacker}가 뒤로 한 걸음 물러나요 (상대는 제자리). 연타에서 빽스텝 다음에 타격이 오면, 때리는 선수가
+          앞으로 걸어 들어가 붙어서 쳐요. 움직임이라 계산 숫자는 없어요.
+        </p>
+      ) : (
+        <>
 
       <div className="flex items-center gap-1" role="radiogroup" aria-label="앞손 뒷손">
         <span className="w-14 shrink-0 text-zinc-400">{info.limb === "arm" ? "손" : "발"}</span>
@@ -181,6 +202,8 @@ export default function StrikePicker({ draft, onChange }: Props) {
           </button>
         ))}
       </div>
+        </>
+      )}
     </section>
   );
 }

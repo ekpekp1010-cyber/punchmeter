@@ -1,15 +1,25 @@
 "use client";
 // Design Ref: §5.3 ComboList — 연타 목록, 순서 바꾸기·지우기·초기화 (PLAN 작업 17)
 
+import { MOVE_NAME_KO, isMoveStep } from "@/lib/lab/combo";
 import { bodyPartInfo, techniqueInfo } from "@/lib/reference";
-import type { StrikeStep } from "@/lib/types";
+import type { ComboItem } from "@/lib/types";
+
+/** 연타 한 칸을 글로 (타격: 누가→누구 기술·부위·속도, 빽스텝: 누가 뒤로 한 걸음) */
+function itemLabel(s: ComboItem): string {
+  if (isMoveStep(s)) return `${s.fighter} ${MOVE_NAME_KO[s.move]} (뒤로 한 걸음)`;
+  const speed = `${s.speedMps.toFixed(2)} m/s${s.speedBasis === "userInput" ? "(입력)" : ""}`;
+  return `${s.attacker}→${s.attacker === "A" ? "B" : "A"} ${techniqueInfo(s.technique).nameKo} · ${bodyPartInfo(s.target).nameKo} · ${speed}${
+    s.defense === "armBlock" ? " · 막음" : ""
+  }`;
+}
 
 /** 연타에 넣을 수 있는 최대 개수 */
 export const MAX_COMBO = 10;
 
 interface Props {
-  steps: StrikeStep[];
-  onChange: (steps: StrikeStep[]) => void;
+  steps: ComboItem[];
+  onChange: (steps: ComboItem[]) => void;
   onAdd: () => void;
   canAdd: boolean;
   /** 재생 중인 순서 (없으면 −1) */
@@ -59,11 +69,7 @@ export default function ComboList({ steps, onChange, onAdd, canAdd, current }: P
               className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${i === current ? "bg-red-950 ring-1 ring-red-700" : "bg-zinc-900"}`}
             >
               <span className="w-4 tabular-nums text-zinc-500">{i + 1}</span>
-              <span className="flex-1">
-                {s.attacker}→{s.attacker === "A" ? "B" : "A"} {techniqueInfo(s.technique).nameKo} · {bodyPartInfo(s.target).nameKo} ·{" "}
-                {s.speedMps.toFixed(2)} m/s{s.speedBasis === "userInput" ? "(입력)" : ""}
-                {s.defense === "armBlock" ? " · 막음" : ""}
-              </span>
+              <span className={`flex-1 ${isMoveStep(s) ? "text-zinc-400" : ""}`}>{itemLabel(s)}</span>
               <button type="button" aria-label={`${i + 1}번 위로`} onClick={() => move(i, -1)} disabled={i === 0} className="px-1 disabled:opacity-30">
                 ↑
               </button>

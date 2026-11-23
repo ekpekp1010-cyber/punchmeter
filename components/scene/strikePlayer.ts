@@ -344,6 +344,12 @@ export const preparePunch = prepareStrike;
 
 /** 공격자 자세를 시각 time에 맞춰 놓는다 (beginFrame 뒤에 부른다). 닿았는지 돌려준다 */
 export function poseAttacker(strike: ActiveStrike, attacker: FighterRig): boolean {
+  // 준비 시간에는 가드 자세로 선다 (이때 두 선수 거리가 천천히 바뀐다)
+  if (strike.time < strike.motion.timing.pre) {
+    attacker.setTwist(0);
+    attacker.guard();
+    return true;
+  }
   const u = strike.motion.progress(strike.time);
   poseBody(attacker, strike.request.technique, strike.twistSign, u);
   return poseLimb(attacker, strike.request.technique, strike.limbSide, strike.motion.desired(strike.time), u);

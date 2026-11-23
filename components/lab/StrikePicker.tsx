@@ -4,7 +4,7 @@
 // - 속도는 연구 기본값·범위 안에서 조절하고 출처를 보인다. 자료가 없으면 "자료 없음 — 직접 입력", 넣은 값은 "사용자 입력값"
 
 import { useId } from "react";
-import { BODY_PARTS, SOURCES, TECHNIQUES, bodyPartInfo, sideCanTarget, techniqueInfo } from "@/lib/reference";
+import { BODY_PARTS, TECHNIQUES, bodyPartInfo, shortCite, sideCanTarget, techniqueInfo } from "@/lib/reference";
 import type { Defense, FighterId, StrikeSide, TechniqueId } from "@/lib/types";
 
 /** 3D로 재생할 수 있는 기술 (PLAN 작업 11: 펀치, 작업 12: 킥·팔꿈치·무릎) */
@@ -51,15 +51,6 @@ export function checkSpeed(d: StrikeDraft): { speedMps: number | null; basis: "r
     if (n < lo || n > hi) return { speedMps: null, basis, error: `연구 범위(${lo}~${hi} m/s) 안에서 골라 주세요` };
   }
   return { speedMps: n, basis };
-}
-
-/** 출처를 짧게: 첫 저자 성 + 연도 (예: "Dinu 2020") */
-export function shortCite(id: string): string {
-  const citation = SOURCES[id]?.citation;
-  const year = id.match(/\d{4}/)?.[0] ?? "";
-  if (!citation) return id;
-  const firstAuthor = citation.split(/[ ,(]/)[0];
-  return `${firstAuthor} ${year}`.trim();
 }
 
 interface Props {

@@ -8,6 +8,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
+import { smoothStep } from "@/lib/motion/path";
 import type { FighterId, Sex } from "@/lib/types";
 import { FighterRig } from "./fighterRig";
 import { poseAttacker, poseDefenderFor, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
@@ -17,8 +18,10 @@ export const MODELS = modelsJson as unknown as ModelsJson;
 
 /** 재생 상태 알림 */
 export interface PlaybackEvents {
-  /** 닿는 순간 (한 번) */
-  onContact?: (strike: ActiveStrike) => void;
+  /** 타격 하나가 시작될 때 (index = 연타 안 순서) */
+  onStart?: (strike: ActiveStrike, index: number) => void;
+  /** 닿는 순간 (타격마다 한 번) */
+  onContact?: (strike: ActiveStrike, index: number) => void;
   /** 재생이 끝났을 때 */
   onEnd?: (strike: ActiveStrike) => void;
 }
@@ -76,6 +79,13 @@ export class Stage {
   private readonly rigs = new Map<FighterId, FighterRig>();
   private strike: ActiveStrike | null = null;
   private events: PlaybackEvents = {};
+  /** 차례로 재생할 타격들 (단타는 하나) */
+  private queue: StrikeRequest[] = [];
+  private queueIndex = 0;
+  private rate = 0.25;
+  private paused = false;
+  /** 준비 시간 동안 옮길 두 선수 거리 */
+  private distanceMove: { from: number; to: number } | null = null;
   private raf = 0;
   private lastTime = 0;
   private distanceM = DEFAULT_DISTANCE_M;
@@ -239,35 +249,61 @@ export class Stage {
     return this.distanceM;
   }
 
-  // ── 동작 재생 (PLAN 작업 11) ──
+  // ── 동작 재생 (PLAN 작업 11·14·17) ──
 
   /** 재생 알림 받기 */
   setPlaybackEvents(events: PlaybackEvents) {
     this.events = events;
   }
 
-  /**
-   * 타격 재생 (펀치·킥·팔꿈치·무릎). rate는 재생 속도 배율 (1 = 원래 속도, 0.25 = 4배 느리게).
-   * 두 선수 거리를 끝점이 닿을 만큼 맞춘 뒤 처음부터 재생한다.
-   */
-  playStrike(req: StrikeRequest, rate = 1): ActiveStrike | null {
+  /** 타격 하나를 준비한다 (거리 맞춤 포함). 준비 전 거리를 기억해 두고 준비 시간 동안 천천히 옮긴다 */
+  private prepare(req: StrikeRequest): ActiveStrike | null {
     const attacker = this.rigs.get(req.attacker);
     const defender = this.rigs.get(req.attacker === "A" ? "B" : "A");
     if (!attacker || !defender) return null;
-    this.strike = prepareStrike(
-      req,
-      attacker,
-      defender,
-      () => this.distanceM,
-      (d) => this.setDistance(d),
-      rate,
-    );
+    const from = this.distanceM;
+    const strike = prepareStrike(req, attacker, defender, () => this.distanceM, (d) => this.setDistance(d), this.rate);
+    this.distanceMove = { from, to: this.distanceM };
+    return strike;
+  }
+
+  /**
+   * 타격 하나 재생 (펀치·킥·팔꿈치·무릎). rate는 재생 속도 배율 (1 = 원래 속도, 0.25 = 4배 느리게).
+   * 두 선수 거리를 끝점이 닿을 만큼 맞춘 뒤 처음부터 재생한다.
+   */
+  playStrike(req: StrikeRequest, rate = this.rate): ActiveStrike | null {
+    return this.playSequence([req], rate);
+  }
+
+  /** 여러 타격을 차례로 재생한다 (연타, PLAN 작업 17). 첫 타격을 돌려준다 */
+  playSequence(reqs: StrikeRequest[], rate = this.rate): ActiveStrike | null {
+    this.rate = rate;
+    this.queue = [...reqs];
+    this.queueIndex = 0;
+    this.paused = false;
+    this.strike = reqs.length > 0 ? this.prepare(reqs[0]) : null;
+    if (this.strike) this.events.onStart?.(this.strike, 0);
     return this.strike;
+  }
+
+  /** 마지막으로 재생한 것을 처음부터 다시 */
+  replay(): ActiveStrike | null {
+    return this.queue.length > 0 ? this.playSequence(this.queue, this.rate) : null;
   }
 
   /** 재생 속도 배율 바꾸기 (재생 중에도) */
   setRate(rate: number) {
+    this.rate = rate;
     if (this.strike) this.strike.rate = rate;
+  }
+
+  /** 일시정지 / 이어서 재생 */
+  setPaused(paused: boolean) {
+    this.paused = paused;
+  }
+
+  get isPaused(): boolean {
+    return this.paused;
   }
 
   /** 지금 재생 중인 타격 */
@@ -275,17 +311,25 @@ export class Stage {
     return this.strike;
   }
 
-  /** 매 장면: 모든 선수를 쉬는 자세로 되돌린 뒤 가드, 재생 중이면 공격자 동작 */
+  /** 매 장면: 모든 선수를 쉬는 자세로 되돌린 뒤 가드, 재생 중이면 공격자·방어자 동작 */
   private poseFighters(dt: number) {
     const s = this.strike;
     if (s) {
       const before = s.time;
-      s.time = Math.min(s.motion.timing.total, s.time + dt * s.rate);
+      if (!this.paused) s.time = Math.min(s.motion.timing.total, s.time + dt * s.rate);
       const contactTime = s.motion.timing.contactTime;
       if (!s.contacted && before <= contactTime && s.time >= contactTime) {
         s.time = contactTime; // 닿는 장면을 반드시 한 번 그린다
         s.contacted = true;
-        this.events.onContact?.(s);
+        this.events.onContact?.(s, this.queueIndex);
+      }
+      // 준비 시간 동안 두 선수 거리를 이전 거리에서 이번 거리로 천천히 옮긴다
+      if (this.distanceMove) {
+        const k = smoothStep(s.time / s.motion.timing.pre);
+        const { from, to } = this.distanceMove;
+        this.distanceM = from + (to - from) * k;
+        this.placeFighters();
+        if (k >= 1) this.distanceMove = null;
       }
     }
     for (const [id, rig] of this.rigs) {
@@ -302,8 +346,15 @@ export class Stage {
       }
     }
     if (s && s.time >= s.motion.timing.total) {
-      this.strike = null;
-      this.events.onEnd?.(s);
+      // 다음 타격이 있으면 이어서, 없으면 끝
+      this.queueIndex++;
+      if (this.queueIndex < this.queue.length) {
+        this.strike = this.prepare(this.queue[this.queueIndex]);
+        if (this.strike) this.events.onStart?.(this.strike, this.queueIndex);
+      } else {
+        this.strike = null;
+        this.events.onEnd?.(s);
+      }
     }
   }
 

@@ -77,6 +77,8 @@ export class Stage {
   /** 성별마다 한 번만 내려받은 원본 (같은 성별 두 선수는 복제해서 쓴다) */
   private readonly templates = new Map<Sex, Promise<THREE.Object3D>>();
   private readonly fighters = new Map<FighterId, StageFighter>();
+  /** 선수마다 마지막으로 고른 성별 (setFighter 순서가 뒤바뀌어도 마지막 것만 반영) */
+  private readonly wantedSex = new Map<FighterId, Sex>();
   private readonly frameCallbacks = new Set<FrameCallback>();
   private readonly resizeObserver: ResizeObserver;
   private readonly rigs = new Map<FighterId, FighterRig>();
@@ -163,12 +165,19 @@ export class Stage {
    * 선수를 무대에 세운다. 이미 같은 성별로 서 있으면 그대로 둔다.
    * A는 왼쪽에서 오른쪽(+X)을, B는 오른쪽에서 왼쪽(-X)을 바라본다.
    */
-  async setFighter(id: FighterId, sex: Sex): Promise<StageFighter> {
-    const existing = this.fighters.get(id);
-    if (existing && existing.sex === sex) return existing;
+  async setFighter(id: FighterId, sex: Sex): Promise<StageFighter | undefined> {
+    // 마지막으로 고른 성별을 기억한다. 캐릭터 파일을 내려받는 동안 성별을 다시 바꾸면,
+    // 늦게 도착한 이전 성별 캐릭터가 새로 고른 캐릭터를 덮어쓰지 않게 한다
+    this.wantedSex.set(id, sex);
+    const current = this.fighters.get(id);
+    if (current && current.sex === sex) return current;
 
     const template = await this.template(sex);
     if (this.disposed) throw new Error("무대가 이미 닫혔습니다");
+    if (this.wantedSex.get(id) !== sex) return this.fighters.get(id); // 그사이 다른 성별을 골랐다
+    // 기다리는 동안 바뀌었을 수 있으니 지금 서 있는 선수를 다시 본다
+    const existing = this.fighters.get(id);
+    if (existing && existing.sex === sex) return existing;
     if (existing) this.removeFighter(existing);
 
     const model = cloneSkinned(template);

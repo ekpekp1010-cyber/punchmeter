@@ -10,6 +10,7 @@ import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import { smoothStep } from "@/lib/motion/path";
 import type { FighterId, Sex } from "@/lib/types";
+import { ArrowLayer } from "./arrows";
 import { FighterRig } from "./fighterRig";
 import { poseAttacker, poseDefenderFor, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
 
@@ -77,6 +78,7 @@ export class Stage {
   private readonly frameCallbacks = new Set<FrameCallback>();
   private readonly resizeObserver: ResizeObserver;
   private readonly rigs = new Map<FighterId, FighterRig>();
+  private readonly arrows: ArrowLayer;
   private strike: ActiveStrike | null = null;
   private events: PlaybackEvents = {};
   /** 차례로 재생할 타격들 (단타는 하나) */
@@ -112,6 +114,7 @@ export class Stage {
     this.controls.update();
 
     this.buildEnvironment();
+    this.arrows = new ArrowLayer(this.scene);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
@@ -281,6 +284,7 @@ export class Stage {
     this.queue = [...reqs];
     this.queueIndex = 0;
     this.paused = false;
+    this.arrows.clear();
     this.strike = reqs.length > 0 ? this.prepare(reqs[0]) : null;
     if (this.strike) this.events.onStart?.(this.strike, 0);
     return this.strike;
@@ -322,6 +326,8 @@ export class Stage {
         s.time = contactTime; // 닿는 장면을 반드시 한 번 그린다
         s.contacted = true;
         this.events.onContact?.(s, this.queueIndex);
+        // 닿는 순간 진행 방향 화살표 (PLAN 작업 15)
+        this.arrows.add(s.contactPoint, s.contactDir, s.request.speedMps, s.hitPart !== s.request.target);
       }
       // 준비 시간 동안 두 선수 거리를 이전 거리에서 이번 거리로 천천히 옮긴다
       if (this.distanceMove) {
@@ -400,6 +406,7 @@ export class Stage {
     const dt = this.lastTime === 0 ? 0 : Math.min(0.1, now - this.lastTime);
     this.lastTime = now;
     this.poseFighters(dt);
+    this.arrows.update(this.paused ? 0 : dt); // 일시정지 중에는 화살표를 그대로 둔다
     for (const cb of this.frameCallbacks) cb(dt, now);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
@@ -410,6 +417,7 @@ export class Stage {
     cancelAnimationFrame(this.raf);
     this.resizeObserver.disconnect();
     this.frameCallbacks.clear();
+    this.arrows.clear();
     for (const f of [...this.fighters.values()]) this.removeFighter(f);
     this.controls.dispose();
     this.renderer.dispose();

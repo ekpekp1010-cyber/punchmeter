@@ -97,6 +97,12 @@ export interface ActiveStrike {
   contacted: boolean;
   /** 닿는 순간 끝점이 노린 곳에 닿았는가 */
   reached: boolean;
+  /** 닿는 순간 끝점 위치 (월드) */
+  contactPoint: THREE.Vector3;
+  /** 닿는 순간 진행 방향 (월드, 길이 1) */
+  contactDir: THREE.Vector3;
+  /** 실제로 닿은 부위 (막았으면 막은 팔다리) */
+  hitPart: BodyPart;
 }
 
 /** 앞손·앞발이면 왼쪽(오소독스), 뒷손·뒷발이면 오른쪽 */
@@ -336,7 +342,21 @@ export function prepareStrike(
     progress,
     desired: (t: number) => planned.at(progress(t) * planned.length),
   };
-  return { request: req, motion, limbSide, twistSign, time: 0, rate, contacted: false, reached };
+  // 닿는 순간 진행 방향 = 실제 끝점 길의 마지막 방향 (화살표용)
+  const contactDir = actual[TRACE_SAMPLES].clone().sub(actual[TRACE_SAMPLES - 1]).normalize();
+  return {
+    request: req,
+    motion,
+    limbSide,
+    twistSign,
+    time: 0,
+    rate,
+    contacted: false,
+    reached,
+    contactPoint: actual[TRACE_SAMPLES].clone(),
+    contactDir,
+    hitPart,
+  };
 }
 
 /** 이전 이름 (펀치만 받던 때) */

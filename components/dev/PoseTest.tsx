@@ -12,7 +12,7 @@ import { PoseAnalyzer, type DetectResult } from "@/lib/engine/poseAnalyzer";
 import { PoseTracker, type TrackedPerson } from "@/lib/engine/poseTracker";
 import { PoseSmoother } from "@/lib/engine/smoothing";
 import { PoseTimeline } from "@/lib/engine/poseTimeline";
-import { strikeArrows } from "@/lib/engine/strikeArrows";
+import { ContactDetector, type StrikeContact } from "@/lib/engine/contact";
 import { drawBodyFigure, PREDICTED_OPACITY } from "@/components/result/bodyFigure";
 import { drawStrikeArrows, type FadingArrow } from "@/components/result/drawArrows";
 
@@ -25,8 +25,8 @@ const KEY_JOINTS = [LANDMARK.leftWrist, LANDMARK.rightWrist, LANDMARK.leftAnkle,
 /** 재생 속도 선택지 (슬로우 모션) */
 const SPEEDS = [0.1, 0.25, 0.5, 1] as const;
 
-/** 화살표가 사라지기까지 남아 있는 시간 (영상 속 초). 느린 재생에서 화살표를 눈으로 따라갈 수 있게 */
-const ARROW_LINGER_SEC = 0.3;
+/** 닿은 타격 화살표가 사라지기까지 남아 있는 시간 (영상 속 초). 느린 재생에서 눈으로 따라갈 수 있게 */
+const ARROW_LINGER_SEC = 0.4;
 
 /**
  * 화살표 위치
@@ -48,9 +48,25 @@ interface Stats {
   avgKeyVisibility: number;
   /** 분석이 밀려 건너뛴 장면 수 */
   dropped: number;
+  /** 선수별 상대 몸에 닿은 타격 수 (0 = A, 1 = B) */
+  counts: StrikeCounts[];
 }
 
+/** 선수 한 명의 닿은 타격 수 */
+interface StrikeCounts {
+  punch: number;
+  kick: number;
+  /** 팔에 막힌 타격 */
+  blocked: number;
+}
+
+const EMPTY_COUNTS = (): StrikeCounts[] => [
+  { punch: 0, kick: 0, blocked: 0 },
+  { punch: 0, kick: 0, blocked: 0 },
+];
+
 const EMPTY_STATS: Stats = {
+  counts: EMPTY_COUNTS(),
   frames: 0,
   predictedFrames: 0,
   withZero: 0,
@@ -211,6 +227,11 @@ export default function PoseTest() {
     const tracker = new PoseTracker(aspect);
     const smoother = new PoseSmoother();
     const timeline = new PoseTimeline();
+    const detector = new ContactDetector(aspect);
+    /** 지금까지 찾은 "닿은 타격" (시간 순) */
+    const contacts: StrikeContact[] = [];
+    let counts = EMPTY_COUNTS();
+    let lastResultTime: number | null = null;
     const skippedAtStart = analyzer.skipped;
 
     setStats(EMPTY_STATS);
@@ -237,6 +258,7 @@ export default function PoseTest() {
       avgMs: frames ? totalMs / frames : 0,
       avgKeyVisibility: visibilityCount ? visibilitySum / visibilityCount : 0,
       dropped: missedOnScreen + (analyzer.skipped - skippedAtStart),
+      counts: counts.map((c) => ({ ...c })),
     });
 
     /** 작업자가 장면 하나를 다 분석하면 불린다 */
@@ -260,7 +282,22 @@ export default function PoseTest() {
       // 선수 2명으로 이어 붙이기(겹치면 예측, 잘린 다리 채움) → 떨림 거르기 → 쌓아 두기
       const tracked = tracker.update(detections, result.mediaTime);
       if (tracked.some((p) => p.predicted)) predictedFrames += 1;
-      timeline.push(result.mediaTime, smoother.apply(tracked, result.mediaTime), performance.now());
+      const smoothed = smoother.apply(tracked, result.mediaTime);
+      timeline.push(result.mediaTime, smoothed, performance.now());
+
+      // 상대 몸에 닿은 펀치·킥 찾기 (영상을 뒤로 감으면 처음부터 다시 센다)
+      if (lastResultTime !== null && result.mediaTime < lastResultTime) {
+        contacts.length = 0;
+        counts = EMPTY_COUNTS();
+      }
+      lastResultTime = result.mediaTime;
+      for (const contact of detector.push(result.mediaTime, smoothed)) {
+        contacts.push(contact);
+        const c = counts[contact.slot];
+        if (contact.outcome === "blocked") c.blocked += 1;
+        else if (contact.limb === "punch") c.punch += 1;
+        else c.kick += 1;
+      }
       if (frames % 10 === 0) setStats(snapshot());
     };
 
@@ -309,9 +346,8 @@ export default function PoseTest() {
     video.playbackRate = speed;
     video.muted = true;
 
-    // 그리기 반복: 모니터 새로고침마다 "지금 보이는 영상 장면"의 자세로 화살표를 구해 그린다.
-    // 화살표는 바로 사라지지 않고 0.3초(영상 속 시간) 동안 흐려지며 남아, 느린 재생에서 눈으로 따라갈 수 있다.
-    const lingering = new Map<string, { arrow: FadingArrow; seenAt: number }>();
+    // 그리기 반복: 모니터 새로고침마다 "지금 보이는 영상 장면"에 맞춰, 그 무렵 상대 몸에 닿은 타격만 화살표로 그린다.
+    // 화살표는 닿은 순간부터 0.4초(영상 속 시간) 동안 흐려지며 남아, 느린 재생에서 눈으로 따라갈 수 있다.
     let lastDrawnTime: number | null = null;
     let lastVersion = -1;
     const render = () => {
@@ -320,24 +356,16 @@ export default function PoseTest() {
       const t = video.currentTime;
       if (!redrawRef.current && t === lastDrawnTime && timeline.version === lastVersion) return; // 바뀐 게 없으면 건너뜀
       redrawRef.current = false;
-      if (lastDrawnTime !== null && t < lastDrawnTime) lingering.clear(); // 뒤로 감음
       lastDrawnTime = t;
       lastVersion = timeline.version;
 
       // 영상이 분석보다 조금 앞서 있으면 가장 최근에 분석한 장면 기준으로 본다
       const tEff = Math.min(t, timeline.lastTime() ?? t);
       const people = timeline.sampleAt(tEff);
-      // 장면 한 칸 전 자세와 비교해 주먹·발이 몸 기준으로 움직인 방향을 구한다
-      const dt = timeline.interval();
-      const before = timeline.sampleAt(tEff - dt);
-      for (const arrow of strikeArrows(people, before, dt, aspect)) {
-        lingering.set(`${arrow.slot}-${arrow.joint}`, { arrow: { ...arrow, alpha: 1 }, seenAt: t });
-      }
       const shown: FadingArrow[] = [];
-      for (const [key, { arrow, seenAt }] of lingering) {
-        const age = t - seenAt;
-        if (age > ARROW_LINGER_SEC) lingering.delete(key);
-        else shown.push({ ...arrow, alpha: 1 - age / ARROW_LINGER_SEC });
+      for (const c of contacts) {
+        const age = t - c.t;
+        if (age >= 0 && age <= ARROW_LINGER_SEC) shown.push({ ...c, alpha: 1 - age / ARROW_LINGER_SEC });
       }
       draw(people, shown);
     };
@@ -390,7 +418,7 @@ export default function PoseTest() {
       </div>
       <p className="text-sm">{status}</p>
       <p className="text-xs text-gray-500">
-        화살표 = 주먹(펀치)·발(킥)이 몸 기준으로 빠르게 움직이는 방향. 빠를수록 길고 굵어요 (공개 기록의 펀치 속도 9.14 m/s에서
+        화살표 = 상대 몸에 닿은 펀치·킥만, 닿기 직전 진행 방향으로 표시해요 (팔에 막히면 점선 「막힘」). 빠를수록 길고 굵어요 (공개 기록의 펀치 속도 9.14 m/s에서
         가장 큼). 색: 빨강 = 선수 A, 파랑 = 선수 B.
       </p>
 
@@ -429,6 +457,14 @@ export default function PoseTest() {
 
       <table className="w-full max-w-xl text-sm">
         <tbody>
+          {(["A (빨강)", "B (파랑)"] as const).map((name, slot) => (
+            <tr key={name} className="font-semibold">
+              <td className="py-1">선수 {name}: 상대 몸에 닿은 타격</td>
+              <td>
+                펀치 {stats.counts[slot].punch} · 킥 {stats.counts[slot].kick} · 막힘 {stats.counts[slot].blocked}
+              </td>
+            </tr>
+          ))}
           <tr><td className="py-1 text-gray-600">분석한 장면 수</td><td>{stats.frames}</td></tr>
           <tr><td className="py-1 text-gray-600">2명 이상 찾은 장면</td><td>{stats.withTwo} ({pct(stats.withTwo)})</td></tr>
           <tr><td className="py-1 text-gray-600">1명만 찾은 장면</td><td>{stats.withOne} ({pct(stats.withOne)})</td></tr>

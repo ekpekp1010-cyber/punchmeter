@@ -6,15 +6,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ComboList from "@/components/lab/ComboList";
+import ExportButtons from "@/components/lab/ExportButtons";
 import FighterForm from "@/components/lab/FighterForm";
 import JointLockPanel, { type JointLockDraft } from "@/components/lab/JointLockPanel";
 import Legend from "@/components/lab/Legend";
+import PrintReport from "@/components/lab/PrintReport";
 import ResultPanel from "@/components/lab/ResultPanel";
 import StrikePicker, { PLAYABLE, checkSpeed, type StrikeDraft } from "@/components/lab/StrikePicker";
 import PlaybackBar, { type Rate } from "@/components/scene/PlaybackBar";
 import Stage3D from "@/components/scene/Stage3D";
 import type { Stage } from "@/components/scene/stage";
 import { accumulateLoads, buildStrikeResult, judgeJointLock } from "@/lib/lab";
+import { buildCsv, exportBaseName } from "@/lib/export/csv";
 import { checkFighter, toDraft, type FighterCheck, type FighterDraft } from "@/lib/lab/fighterInput";
 import type { Fighter, FighterId, PartLoad, StrikeResult, StrikeStep } from "@/lib/types";
 
@@ -186,8 +189,36 @@ export default function LabPage() {
     );
   }, [lockDraft, lockJudgment]);
 
+  // 내려받기 (PLAN 작업 20·21): 모두 브라우저 안에서 만든다
+  const [snapshot, setSnapshot] = useState<string | null>(null);
+  const [reportTitle, setReportTitle] = useState("");
+  const canExport = results.length > 0 && playedFighters !== null && !playback.playing;
+  const onCsv = () => {
+    if (!playedFighters) return;
+    const blob = new Blob([buildCsv(results, playedFighters)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = exportBaseName(new Date()) + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const onPdf = () => {
+    const name = exportBaseName(new Date());
+    setSnapshot(stageRef.current?.snapshot() ?? null);
+    setReportTitle(name);
+    // 보고서가 그려진 뒤 인쇄 창을 연다. 저장 파일 이름은 문서 제목을 따른다
+    window.setTimeout(() => {
+      const before = document.title;
+      document.title = name;
+      window.print();
+      document.title = before;
+    }, 150);
+  };
+
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+    <>
+    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 print:hidden">
       <header className="border-b border-zinc-800 px-5 py-3">
         <h1 className="text-lg font-semibold">펀치미터 · 타격 실험실</h1>
       </header>
@@ -241,8 +272,11 @@ export default function LabPage() {
           </p>
           <ResultPanel results={results} contactedCount={shownCount} selected={selected} onSelect={setSelected} />
           <Legend loads={loads} />
+          <ExportButtons disabled={!canExport} onCsv={onCsv} onPdf={onPdf} />
         </section>
       </main>
     </div>
+    <PrintReport title={reportTitle} fighters={playedFighters} results={results} loads={loads} snapshot={snapshot} />
+    </>
   );
 }

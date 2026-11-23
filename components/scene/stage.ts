@@ -431,6 +431,12 @@ export class Stage {
     return () => this.frameCallbacks.delete(cb);
   }
 
+  /** 지금 장면을 그림(PNG 데이터 주소)으로 — PDF 보고서용 (PLAN 작업 21) */
+  snapshot(): string {
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL("image/png");
+  }
+
   /** 시점을 처음 위치로 */
   resetView() {
     this.camera.position.set(0, 1.45, 4.6);

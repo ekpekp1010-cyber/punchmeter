@@ -325,22 +325,69 @@ export const LIMB_TOLERANCE: ThresholdEntry[] = [
  * - borrowed: 그 부위 자료가 없어 다른 부위·방향 값을 빌림 ("추정" 표시)
  * 왼·오른쪽은 같은 기준을 쓴다.
  */
-export const PART_THRESHOLD_PLAN: Record<
-  BodyPart,
-  { method: "force" | "moment" | "headAccel" | "borrowed"; basis: string; sourceIds: string[] }
-> = {
-  head: { method: "headAccel", basis: "뇌진탕 50% 위험 778 m/s² × 머리 유효 질량 (얼굴뼈 골절 힘은 의학적 판단에 따로 표시)", sourceIds: ["king2003", "walilko2005"] },
-  torsoFront: { method: "borrowed", basis: "정면 자료 없음 → 옆 가슴 5480 N을 빌려 씀", sourceIds: ["yoganandan2007"] },
-  flankLeft: { method: "force", basis: "옆 가슴 5480 N (옆 복부 6730 N보다 낮은 값을 씀)", sourceIds: ["yoganandan2007"] },
-  flankRight: { method: "force", basis: "옆 가슴 5480 N (옆 복부 6730 N보다 낮은 값을 씀)", sourceIds: ["yoganandan2007"] },
-  upperArmLeft: { method: "moment", basis: "위팔뼈 남 257 N·m / 여 128 N·m", sourceIds: ["santago2008", "duma1999"] },
-  upperArmRight: { method: "moment", basis: "위팔뼈 남 257 N·m / 여 128 N·m", sourceIds: ["santago2008", "duma1999"] },
-  forearmLeft: { method: "moment", basis: "아래팔 94 N·m", sourceIds: ["pintar1998"] },
-  forearmRight: { method: "moment", basis: "아래팔 94 N·m", sourceIds: ["pintar1998"] },
-  thighLeft: { method: "force", basis: "넓적다리뼈 옆 충격 4780 N", sourceIds: ["kennedy2004"] },
-  thighRight: { method: "force", basis: "넓적다리뼈 옆 충격 4780 N", sourceIds: ["kennedy2004"] },
-  lowerLegLeft: { method: "moment", basis: "정강이뼈 남 320 N·m / 여 280 N·m", sourceIds: ["nyquist1985"] },
-  lowerLegRight: { method: "moment", basis: "정강이뼈 남 320 N·m / 여 280 N·m", sourceIds: ["nyquist1985"] },
+export interface PartThresholdPlan {
+  method: "force" | "moment" | "headAccel" | "borrowed";
+  /** 기준값. force·borrowed는 N, moment는 N·m, headAccel은 m/s² */
+  value: { male: number; female: number };
+  /** moment 방식일 때 뼈 길이를 구할 분절 (segments.ts) */
+  boneSegment?: "upperArm" | "forearm" | "shank";
+  basis: string;
+  sourceIds: string[];
+}
+
+const HEAD_PLAN: PartThresholdPlan = {
+  method: "headAccel",
+  value: { male: 778, female: 778 },
+  basis: "뇌진탕 50% 위험 778 m/s² × 머리 유효 질량 (얼굴뼈 골절 힘은 의학적 판단에 따로 표시)",
+  sourceIds: ["king2003", "walilko2005"],
+};
+const FLANK_PLAN: PartThresholdPlan = {
+  method: "force",
+  value: { male: 5480, female: 5480 },
+  basis: "옆 가슴 5480 N (옆 복부 6730 N보다 낮은 값을 씀)",
+  sourceIds: ["yoganandan2007"],
+};
+const UPPER_ARM_PLAN: PartThresholdPlan = {
+  method: "moment",
+  value: { male: 257, female: 128 },
+  boneSegment: "upperArm",
+  basis: "위팔뼈 남 257 N·m (50% 위험) / 여 128 N·m",
+  sourceIds: ["santago2008", "duma1999"],
+};
+const FOREARM_PLAN: PartThresholdPlan = {
+  method: "moment",
+  value: { male: 94, female: 94 },
+  boneSegment: "forearm",
+  basis: "아래팔 94 N·m (남녀 구분 없는 평균)",
+  sourceIds: ["pintar1998"],
+};
+const THIGH_PLAN: PartThresholdPlan = {
+  method: "force",
+  value: { male: 4780, female: 4780 },
+  basis: "넓적다리뼈 옆 충격 4780 N",
+  sourceIds: ["kennedy2004"],
+};
+const LOWER_LEG_PLAN: PartThresholdPlan = {
+  method: "moment",
+  value: { male: 320, female: 280 },
+  boneSegment: "shank",
+  basis: "정강이뼈 남 320 N·m / 여 280 N·m",
+  sourceIds: ["nyquist1985"],
+};
+
+export const PART_THRESHOLD_PLAN: Record<BodyPart, PartThresholdPlan> = {
+  head: HEAD_PLAN,
+  torsoFront: { ...FLANK_PLAN, method: "borrowed", basis: "정면 자료 없음 → 옆 가슴 5480 N을 빌려 씀" },
+  flankLeft: FLANK_PLAN,
+  flankRight: FLANK_PLAN,
+  upperArmLeft: UPPER_ARM_PLAN,
+  upperArmRight: UPPER_ARM_PLAN,
+  forearmLeft: FOREARM_PLAN,
+  forearmRight: FOREARM_PLAN,
+  thighLeft: THIGH_PLAN,
+  thighRight: THIGH_PLAN,
+  lowerLegLeft: LOWER_LEG_PLAN,
+  lowerLegRight: LOWER_LEG_PLAN,
 };
 
 /** 자료를 찾지 못했거나 확인하지 못한 항목 */

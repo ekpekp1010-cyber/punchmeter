@@ -13,8 +13,15 @@ import type { BodyPart, FighterId, GloveOz, JointLockId, PartLoad, Sex } from "@
 import { colorOfStep } from "./loadColors";
 import { ArrowLayer } from "./arrows";
 import { JointArrow, poseJointLock } from "./jointLockPose";
-import { FighterRig } from "./fighterRig";
-import { poseAttacker, poseDefenderFor, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
+import { FighterRig, type PoseSnapshot } from "./fighterRig";
+import {
+  LINK_BLEND_S,
+  poseAttacker,
+  poseDefenderFor,
+  prepareStrike,
+  type ActiveStrike,
+  type StrikeRequest,
+} from "./strikePlayer";
 
 /** 캐릭터 치수 (키·팔 길이·체형별 부피·부위 위치) */
 export const MODELS = modelsJson as unknown as ModelsJson;
@@ -98,6 +105,10 @@ export class Stage {
   private distanceMove: { from: number; to: number } | null = null;
   /** 두 선수 가드를 좁히는 정도 (마지막 타격에서 정한 값, 0~1) */
   private idleGuardTight = 0;
+  /** 이번 타격이 시작될 때의 가드 좁히기 (여기서 이번 값으로 천천히 옮긴다) */
+  private fromGuardTight = 0;
+  /** 동작이 바뀔 때 이전 자세에서 새 자세로 섞기 (선수별 기억한 자세, 지난 시간) */
+  private blend: { from: Map<FighterId, PoseSnapshot>; t: number } | null = null;
   private raf = 0;
   private lastTime = 0;
   private distanceM = DEFAULT_DISTANCE_M;
@@ -327,7 +338,8 @@ export class Stage {
     const defender = this.rigs.get(req.attacker === "A" ? "B" : "A");
     if (!attacker || !defender) return null;
     const from = this.distanceM;
-    const strike = prepareStrike(req, attacker, defender, () => this.distanceM, (d) => this.setDistance(d), this.rate);
+    const link = { hasPrev: this.queueIndex > 0, hasNext: this.queueIndex < this.queue.length - 1 };
+    const strike = prepareStrike(req, attacker, defender, () => this.distanceM, (d) => this.setDistance(d), this.rate, link);
     this.distanceMove = { from, to: this.distanceM };
     return strike;
   }
@@ -349,6 +361,8 @@ export class Stage {
     this.arrows.clear();
     this.jointLock = null;
     this.jointArrow.clear();
+    this.startBlend(); // 지금 보이는 자세에서 부드럽게 시작 (준비 계산이 뼈를 움직이기 전에 기억)
+    this.fromGuardTight = this.idleGuardTight;
     this.strike = reqs.length > 0 ? this.prepare(reqs[0]) : null;
     if (this.strike) this.events.onStart?.(this.strike, 0);
     return this.strike;
@@ -379,12 +393,25 @@ export class Stage {
     return this.strike;
   }
 
-  /** 매 장면: 모든 선수를 쉬는 자세로 되돌린 뒤 가드, 재생 중이면 공격자·방어자 동작 */
+  /** 지금 보이는 두 선수 자세를 기억해, 다음 몇 장면 동안 여기서 새 자세로 섞는다 */
+  private startBlend() {
+    const from = new Map<FighterId, PoseSnapshot>();
+    for (const [id, rig] of this.rigs) from.set(id, rig.snapshotPose());
+    this.blend = { from, t: 0 };
+  }
+
+  /**
+   * 매 장면: 시간을 진행하고(타격이 끝났으면 다음 타격으로 넘긴 뒤), 모든 선수를 쉬는 자세로 되돌려
+   * 가드, 재생 중이면 공격자·방어자 동작을 놓는다. 동작이 막 바뀌었으면 이전 자세에서 섞는다.
+   * 다음 타격 준비(prepareStrike)는 뼈를 시험 삼아 움직이므로, 반드시 자세를 놓기 전에 한다
+   * (뒤에 하면 다음 타격의 뻗은 자세가 한 장면 보여 "동작을 한 번 더 하는" 것처럼 보였다).
+   */
   private poseFighters(dt: number) {
-    const s = this.strike;
+    const step = this.paused ? 0 : dt * this.rate;
+    let s = this.strike;
     if (s) {
       const before = s.time;
-      if (!this.paused) s.time = Math.min(s.motion.timing.total, s.time + dt * s.rate);
+      s.time = Math.min(s.motion.timing.total, s.time + step);
       const contactTime = s.motion.timing.contactTime;
       if (!s.contacted && before <= contactTime && s.time >= contactTime) {
         s.time = contactTime; // 닿는 장면을 반드시 한 번 그린다
@@ -392,18 +419,34 @@ export class Stage {
         this.events.onContact?.(s, this.queueIndex);
         // 닿는 순간 진행 방향 화살표 (PLAN 작업 15)
         this.arrows.add(s.contactPoint, s.contactDir, s.request.speedMps, s.hitPart !== s.request.target);
+      } else if (s.time >= s.motion.timing.total) {
+        // 끝: 다음 타격이 있으면 이어서, 없으면 가드로
+        const ended = s;
+        this.startBlend();
+        this.fromGuardTight = this.idleGuardTight;
+        this.queueIndex++;
+        if (this.queueIndex < this.queue.length) {
+          this.strike = this.prepare(this.queue[this.queueIndex]);
+          if (this.strike) this.events.onStart?.(this.strike, this.queueIndex);
+        } else {
+          this.strike = null;
+          this.events.onEnd?.(ended);
+        }
+        s = this.strike;
       }
+    }
+    if (s) {
       // 준비 시간 동안 두 선수 거리를 이전 거리에서 이번 거리로 천천히 옮긴다
+      const k = smoothStep(Math.min(1, s.time / s.motion.timing.pre));
       if (this.distanceMove) {
-        const k = smoothStep(s.time / s.motion.timing.pre);
         const { from, to } = this.distanceMove;
         this.distanceM = from + (to - from) * k;
         this.placeFighters();
         if (k >= 1) this.distanceMove = null;
       }
+      // 겹침 막기용 가드 좁히기: 준비 시간 동안 이전 값에서 이번 값으로 옮기고, 끝나도 다음 타격 전까지 유지한다
+      this.idleGuardTight = this.fromGuardTight + (s.guardTight - this.fromGuardTight) * k;
     }
-    // 겹침 막기용 가드 좁히기: 준비 시간 동안 천천히 좁히고, 재생이 끝나도 다음 타격 전까지 유지한다
-    if (s) this.idleGuardTight = s.guardTight * smoothStep(Math.min(1, s.time / s.motion.timing.pre));
     for (const [id, rig] of this.rigs) {
       rig.guardTightMin = this.idleGuardTight;
       rig.beginFrame();
@@ -425,16 +468,15 @@ export class Stage {
         rig.guard();
       }
     }
-    if (s && s.time >= s.motion.timing.total) {
-      // 다음 타격이 있으면 이어서, 없으면 끝
-      this.queueIndex++;
-      if (this.queueIndex < this.queue.length) {
-        this.strike = this.prepare(this.queue[this.queueIndex]);
-        if (this.strike) this.events.onStart?.(this.strike, this.queueIndex);
-      } else {
-        this.strike = null;
-        this.events.onEnd?.(s);
+    // 동작이 바뀐 직후: 이전 자세 → 새 자세로 섞는다 (준비 시간 안에 끝나므로 닿는 순간 자세·속도는 그대로)
+    if (this.blend) {
+      this.blend.t += step;
+      const w = smoothStep(Math.min(1, this.blend.t / LINK_BLEND_S));
+      for (const [id, rig] of this.rigs) {
+        const snap = this.blend.from.get(id);
+        if (snap) rig.blendFromSnapshot(snap, w);
       }
+      if (w >= 1) this.blend = null;
     }
   }
 

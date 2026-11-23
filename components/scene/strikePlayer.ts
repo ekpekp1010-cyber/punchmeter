@@ -79,6 +79,22 @@ const OVERLAP_TOLERANCE_M = 0.01;
 /** 실제 길을 기록할 때 나누는 개수 */
 const TRACE_SAMPLES = 160;
 
+/**
+ * 연타 이어 붙이기 (그림용 시간 값, 초) — 사용자 요청: 동작 사이 텀을 줄이고 부드럽게.
+ * 다음 타격이 있으면 회수를 끝까지 하지 않고(팔은 절반, 다리는 80% 지점에서) 끝 대기 없이 바로 넘어가고,
+ * 이전 타격이 있으면 준비 시간을 짧게 잡는다(두 선수 거리가 많이 바뀌면 그만큼 길게).
+ * 무대(stage.ts)가 넘어가는 동안 이전 자세에서 섞어 주므로(LINK_BLEND_S) 준비 시간은 그보다 짧으면 안 된다.
+ */
+export const COMBO_TIMES = { preMinS: 0.12, preSPerM: 0.6, retractCutArm: 0.5, retractCutLeg: 0.8 };
+/** 동작이 바뀔 때 이전 자세에서 새 자세로 섞는 시간(동작 시간, 초) — COMBO_TIMES.preMinS 이하 */
+export const LINK_BLEND_S = 0.12;
+
+/** 연타에서 앞뒤로 이어지는 타격이 있는지 */
+export interface StrikeLink {
+  hasPrev: boolean;
+  hasNext: boolean;
+}
+
 /** 재생용 동작: 실제 끝점 길 위에서 시간을 맞춘 것 */
 export interface PlayMotion {
   timing: StrikeTiming;
@@ -296,7 +312,9 @@ export function prepareStrike(
   getDistance: () => number,
   setDistance: (d: number) => void,
   rate: number,
+  link: StrikeLink = { hasPrev: false, hasNext: false },
 ): ActiveStrike {
+  const startDistance = getDistance();
   const limbSide = armOf(req.side);
   const twistSign = limbSide === "r" ? 1 : -1;
   const spec = SPEC[req.technique];
@@ -422,9 +440,16 @@ export function prepareStrike(
 
   // 4) 실제 길 위에 속도 곡선 → 시간표
   const extend = extendDuration(actualPath.length, req.speedMps);
-  const { pre, hold, retract, post } = MOTION_TIMES;
+  const { hold, retract } = MOTION_TIMES;
+  // 연타: 앞 타격에서 이어지면 준비를 짧게, 뒤 타격으로 이어지면 회수 도중에 넘기고 끝 대기는 없앤다
+  const pre = link.hasPrev
+    ? Math.min(MOTION_TIMES.pre, COMBO_TIMES.preMinS + COMBO_TIMES.preSPerM * Math.abs(getDistance() - startDistance))
+    : MOTION_TIMES.pre;
+  const post = link.hasNext ? 0 : MOTION_TIMES.post;
+  const retractCut = link.hasNext ? (limbKind === "leg" ? COMBO_TIMES.retractCutLeg : COMBO_TIMES.retractCutArm) : 1;
   const contactTime = pre + extend;
-  const timing: StrikeTiming = { pre, extend, hold, retract, post, contactTime, total: contactTime + hold + retract + post };
+  const total = contactTime + hold + retract * retractCut + post;
+  const timing: StrikeTiming = { pre, extend, hold, retract, post, contactTime, total };
   const progress = (t: number) => {
     if (t < pre) return 0;
     if (t < contactTime) return uAtLength(extendDistance(actualPath.length, extend, t - pre));

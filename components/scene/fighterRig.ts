@@ -57,6 +57,17 @@ const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
+const _q = new THREE.Quaternion();
+
+/** 기억해 둔 자세 (snapshotPose) */
+export interface PoseSnapshot {
+  /** 이 자세를 기억한 장치 (캐릭터를 바꾸면 섞지 않는다) */
+  rig: FighterRig;
+  /** 몸 높이 */
+  y: number;
+  /** 뼈마다 회전 */
+  q: THREE.Quaternion[];
+}
 
 export class FighterRig {
   readonly fighter: StageFighter;
@@ -372,6 +383,31 @@ export class FighterRig {
   setRise(m: number) {
     this.fighter.model.position.y = -this.stanceDrop + m;
     this.fighter.model.updateMatrixWorld(true);
+  }
+
+  /** 지금 자세(뼈 회전 + 몸 높이)를 기억한다 — 동작이 바뀔 때 이전 자세에서 부드럽게 넘어가려고 */
+  snapshotPose(): PoseSnapshot {
+    return {
+      rig: this,
+      y: this.fighter.model.position.y,
+      q: [...this.rest.keys()].map((b) => b.quaternion.clone()),
+    };
+  }
+
+  /**
+   * 방금 정한 자세를 기억해 둔 자세와 섞는다. w = 0이면 기억한 자세 그대로, 1이면 방금 정한 자세 그대로.
+   * 매 장면 자세를 다 정한 뒤 부른다.
+   */
+  blendFromSnapshot(snap: PoseSnapshot, w: number) {
+    if (snap.rig !== this || w >= 1) return;
+    const model = this.fighter.model;
+    model.position.y = THREE.MathUtils.lerp(snap.y, model.position.y, w);
+    let i = 0;
+    for (const bone of this.rest.keys()) {
+      _q.copy(bone.quaternion); // 방금 정한 회전 (아래에서 덮어쓰므로 따로 둔다)
+      bone.quaternion.copy(snap.q[i++]).slerp(_q, w);
+    }
+    model.updateMatrixWorld(true);
   }
 
   /**

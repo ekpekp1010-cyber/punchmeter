@@ -12,6 +12,7 @@ import { PoseAnalyzer, type DetectResult } from "@/lib/engine/poseAnalyzer";
 import { PoseTracker, type TrackedPerson } from "@/lib/engine/poseTracker";
 import { PoseSmoother } from "@/lib/engine/smoothing";
 import { PoseTimeline } from "@/lib/engine/poseTimeline";
+import { SkeletonNormalizer } from "@/lib/engine/bodyLengths";
 import {
   CAMERA_PRESETS,
   CameraPlacer,
@@ -86,6 +87,10 @@ export default function PoseTest() {
   const aspectRef = useRef(16 / 9);
   /** 촬영 카메라 35mm 환산 초점거리 (원근 계산용) */
   const focal35Ref = useRef<number>(presetFocal("phone"));
+  /** 선수 A·B 키 (cm, 비우면 null) */
+  const heightsRef = useRef<(number | null)[]>([null, null]);
+  /** 지금 분석 회차의 뼈 길이 고정기 (키를 바꾸면 바로 반영) */
+  const normalizerRef = useRef<SkeletonNormalizer | null>(null);
 
   const [status, setStatus] = useState("관절 찾기 도구를 불러오는 중…");
   const [ready, setReady] = useState(false);
@@ -95,6 +100,7 @@ export default function PoseTest() {
   const [speed, setSpeed] = useState<number>(0.25);
   const [viewMode, setViewMode] = useState<ViewMode>("3d");
   const [cameraPreset, setCameraPreset] = useState<CameraPresetId>("phone");
+  const [heightInputs, setHeightInputs] = useState(["", ""]);
 
   // 3D 장면 준비 (화면을 떠나면 그래픽 자원을 정리한다)
   useEffect(() => {
@@ -211,6 +217,15 @@ export default function PoseTest() {
     scene3dRef.current?.setVerticalFov(verticalFovDeg(focalInScreenHeights(focal35Ref.current, aspectRef.current)));
   }
 
+  /** 선수 키 입력 (100~230cm만 쓰고, 그 밖이거나 비우면 관절 찾기 도구가 어림한 크기를 쓴다) */
+  function onChangeHeight(slot: number, text: string) {
+    setHeightInputs((prev) => prev.map((v, i) => (i === slot ? text : v)));
+    const cm = Number(text);
+    const valid = text.trim() !== "" && Number.isFinite(cm) && cm >= 100 && cm <= 230 ? cm : null;
+    heightsRef.current[slot] = valid;
+    normalizerRef.current?.setHeightCm(slot, valid);
+  }
+
   function start() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -230,6 +245,9 @@ export default function PoseTest() {
     // 처음부터 다시 분석하므로 추적·거르기·배치도 새로 시작한다
     const tracker = new PoseTracker(aspectRef.current);
     const smoother = new PoseSmoother();
+    const normalizer = new SkeletonNormalizer();
+    heightsRef.current.forEach((cm, slot) => normalizer.setHeightCm(slot, cm));
+    normalizerRef.current = normalizer;
     const placer = new CameraPlacer();
     const timeline = new PoseTimeline();
     const skippedAtStart = analyzer.skipped;
@@ -284,13 +302,15 @@ export default function PoseTest() {
         }
       }
 
-      // 선수 2명으로 이어 붙이기(겹치면 예측, 잘린 다리 채움) → 떨림 거르기 → 원근으로 3D 배치
+      // 선수 2명으로 이어 붙이기(겹치면 예측, 잘린 다리 채움) → 떨림 거르기 → 뼈 길이(키) 고정
+      // → 원근으로 3D 배치(처음 0.5초로 시작 위치를 정하고, 사람이 낼 수 있는 속도·가속도로만 이동)
       const tracked = tracker.update(detections, result.mediaTime);
       if (tracked.some((p) => p.predicted)) predictedFrames += 1;
       if (tracked.some((p) => p.estimatedJoints.length > 0)) legFilledFrames += 1;
       const smoothed = smoother.apply(tracked, result.mediaTime);
+      const fixedSize = normalizer.apply(smoothed, result.mediaTime);
       const focal = focalInScreenHeights(focal35Ref.current, aspectRef.current);
-      const placed = placer.apply(smoothed, result.mediaTime, aspectRef.current, focal);
+      const placed = placer.apply(fixedSize, result.mediaTime, aspectRef.current, focal);
 
       // 바로 그리지 않고 쌓아 둔다. 그리기는 아래 render 반복이 모니터 새로고침마다 한다
       timeline.push(result.mediaTime, placed, performance.now());
@@ -413,6 +433,22 @@ export default function PoseTest() {
             ))}
           </select>
         </label>
+        {(["A (빨강)", "B (파랑)"] as const).map((name, slot) => (
+          <label key={name} className="flex items-center gap-1 text-sm">
+            선수 {name} 키
+            <input
+              type="number"
+              inputMode="numeric"
+              min={100}
+              max={230}
+              placeholder="선택"
+              value={heightInputs[slot]}
+              onChange={(e) => onChangeHeight(slot, e.target.value)}
+              className="w-20 rounded border px-2 py-1"
+            />
+            cm
+          </label>
+        ))}
         <label className="flex items-center gap-1 text-sm">
           보기
           <select value={viewMode} onChange={(e) => onChangeView(e.target.value as ViewMode)} className="rounded border px-2 py-1">

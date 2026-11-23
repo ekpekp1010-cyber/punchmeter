@@ -5,7 +5,6 @@
 
 import type { PoseLandmark } from "../types";
 import { LANDMARK as L } from "./landmarks";
-import { OneEuroFilter } from "./smoothing";
 import type { TrackedPerson } from "./poseTracker";
 
 /** 35mm 필름 대각선 길이 (mm). "35mm 환산 초점거리"의 기준 */
@@ -49,6 +48,8 @@ const SEGMENTS: [number, number][] = [
 ];
 /** 이보다 잘 보이는 관절만 쓴다 (채워 넣은 관절은 0.15라 자동으로 빠진다) */
 const MIN_VISIBILITY = 0.5;
+/** 깊이를 어림하려면 믿을 만한 뼈대가 이만큼은 있어야 한다 (한두 개로는 쉽게 틀린다) */
+const MIN_SEGMENTS = 3;
 /** 카메라 쪽으로 누워 거의 점처럼 보이는 뼈대는 비율이 불안정해 뺀다 (m) */
 const MIN_SEGMENT_XY_M = 0.08;
 
@@ -69,7 +70,7 @@ export interface CameraPoint {
  * 선수의 3D 관절(엉덩이 원점)을 카메라 공간으로 옮길 거리를 구한다.
  * 비율 = 화면 속 뼈 길이 ÷ 그 뼈를 카메라 정면에서 본 실제 길이(x·y만, 앞뒤로 기운 만큼은 빠짐) → 깊이 = 초점거리 ÷ 비율.
  * 뼈대마다 구한 비율의 가운데 값을 써서 한두 관절이 틀려도 크게 흔들리지 않게 한다.
- * @returns 3D 관절에 더할 거리. 믿을 만한 뼈대가 하나도 없으면 null
+ * @returns 3D 관절에 더할 거리. 믿을 만한 뼈대가 3개 미만이면 null
  */
 export function placeInCamera(
   image: PoseLandmark[],
@@ -90,7 +91,7 @@ export function placeInCamera(
     const imageLen = Math.hypot((ia.x - ib.x) * aspect, ia.y - ib.y);
     ratios.push(imageLen / worldXY);
   }
-  if (ratios.length === 0) return null;
+  if (ratios.length < MIN_SEGMENTS) return null;
   const screenPerMeter = median(ratios);
   if (screenPerMeter <= 0) return null;
   const depth = focalHeights / screenPerMeter;
@@ -107,21 +108,61 @@ export function placeInCamera(
   return { x: hip.x - (wl.x + wr.x) / 2, y: hip.y - (wl.y + wr.y) / 2, z: hip.z - (wl.z + wr.z) / 2 };
 }
 
-/** 깊이를 거르는 정도. 깊이 어림은 장면마다 흔들리므로 위치보다 더 많이 거른다 */
-const PLACE_MIN_CUTOFF_HZ = 0.5;
-/** 선수가 빠르게 들어가고 빠질 때(약 2 m/s)는 1.5 Hz까지 열려 따라간다 */
-const PLACE_BETA = 0.5;
+// ─────────────────────────────────────────────
+// 물리적으로 가능한 움직임만 허용하는 위치 따라가기
+// ─────────────────────────────────────────────
+// 아래 세 값은 측정값이 아니라 "그림이 튀지 않게" 정한 그림용 설정값이다 (실제 영상 시험 후 조정).
+// 링·케이지 안에서 선수가 스텝으로 뛰어드는 움직임은 넉넉히 따라가고, 한 장면 사이에 몇 m씩 순간이동하는 것은 막는다.
 
-/** 선수마다 카메라 기준 위치를 구하고 흔들림을 걸러 붙인다 */
+/** 몸 전체(엉덩이 위치)의 최고 이동 속도 (m/s) */
+export const MAX_BODY_SPEED_MPS = 5;
+/** 몸 전체의 최고 가속도 (m/s²). 멈춰 있다가 0.5초 만에 최고 속도에 닿는 정도 */
+export const MAX_BODY_ACCEL_MPS2 = 10;
+/** 목표 위치를 따라가는 반응 시간 (초) */
+const FOLLOW_TAU_SEC = 0.15;
+/** 처음 위치를 정할 때 모으는 시간 (초). 이 동안 어림값의 가운데 값을 시작 위치로 삼는다 */
+export const START_WINDOW_SEC = 0.5;
+/** 최근 몇 장면의 가운데 값을 목표로 삼을지 (한두 장면 튀는 값은 무시된다) */
+const TARGET_WINDOW = 5;
+/** 장면 사이가 이보다 길면 이만큼만 움직인 것으로 본다 (초) */
+const MAX_STEP_SEC = 0.2;
+
+interface BodyMotion {
+  /** 처음 위치를 정하는 중에 모은 어림값 */
+  startSamples: CameraPoint[];
+  startedAt: number;
+  started: boolean;
+  position: CameraPoint;
+  velocity: CameraPoint;
+  /** 최근 어림값 (목표 위치 계산용) */
+  recent: CameraPoint[];
+  lastTimeSec: number;
+}
+
+const medianPoint = (points: CameraPoint[]): CameraPoint => ({
+  x: median(points.map((p) => p.x)),
+  y: median(points.map((p) => p.y)),
+  z: median(points.map((p) => p.z)),
+});
+
+const clampLength = (v: CameraPoint, max: number): CameraPoint => {
+  const l = Math.hypot(v.x, v.y, v.z);
+  return l > max ? { x: (v.x * max) / l, y: (v.y * max) / l, z: (v.z * max) / l } : v;
+};
+
+/**
+ * 선수마다 카메라 기준 위치를 정한다.
+ * 1) 처음 등장한 뒤 0.5초 동안의 어림값 가운데 값으로 시작 위치를 정한다.
+ * 2) 그 뒤로는 최근 5장면 어림값의 가운데 값을 목표로, 최고 속도·가속도를 넘지 않게 따라간다.
+ *    그래서 어림값이 갑자기 몇 m씩 튀어도 모델은 순간이동하지 않고, 실제로 계속 그 자리면 사람이 움직일 수 있는 속도로 옮겨 간다.
+ */
 export class CameraPlacer {
-  private filters = new Map<string, OneEuroFilter>();
-  private last = new Map<number, CameraPoint>();
+  private bodies = new Map<number, BodyMotion>();
   private lastTimeSec: number | null = null;
   private focalHeights: number | null = null;
 
   reset() {
-    this.filters.clear();
-    this.last.clear();
+    this.bodies.clear();
     this.lastTimeSec = null;
   }
 
@@ -133,21 +174,67 @@ export class CameraPlacer {
 
     return people.map((person) => {
       const raw = placeInCamera(person.image, person.world, aspect, focalHeights);
-      let camera = this.last.get(person.slot);
-      if (raw) {
-        const f = (axis: keyof CameraPoint) => {
-          const id = `${person.slot}:${axis}`;
-          let filter = this.filters.get(id);
-          if (!filter) {
-            filter = new OneEuroFilter(PLACE_MIN_CUTOFF_HZ, PLACE_BETA);
-            this.filters.set(id, filter);
-          }
-          return filter.filter(raw[axis], timeSec);
-        };
-        camera = { x: f("x"), y: f("y"), z: f("z") };
-        this.last.set(person.slot, camera);
-      }
-      return { ...person, camera };
+      const camera = this.step(person.slot, raw, timeSec);
+      return camera ? { ...person, camera } : { ...person };
     });
+  }
+
+  private step(slot: number, raw: CameraPoint | null, timeSec: number): CameraPoint | null {
+    let body = this.bodies.get(slot);
+    if (!body) {
+      if (!raw) return null;
+      body = {
+        startSamples: [raw],
+        startedAt: timeSec,
+        started: false,
+        position: raw,
+        velocity: { x: 0, y: 0, z: 0 },
+        recent: [raw],
+        lastTimeSec: timeSec,
+      };
+      this.bodies.set(slot, body);
+      return body.position;
+    }
+
+    // 1) 시작 위치 정하기: 모은 어림값의 가운데 값에 세워 둔다
+    if (!body.started) {
+      if (raw) body.startSamples.push(raw);
+      body.position = medianPoint(body.startSamples);
+      body.lastTimeSec = timeSec;
+      if (timeSec - body.startedAt >= START_WINDOW_SEC) {
+        body.started = true;
+        body.recent = body.startSamples.slice(-TARGET_WINDOW);
+      }
+      return body.position;
+    }
+
+    // 2) 물리적으로 가능한 만큼만 목표 쪽으로 움직인다
+    if (raw) {
+      body.recent.push(raw);
+      if (body.recent.length > TARGET_WINDOW) body.recent.shift();
+    }
+    const dt = Math.min(MAX_STEP_SEC, Math.max(0, timeSec - body.lastTimeSec));
+    body.lastTimeSec = timeSec;
+    if (dt === 0) return body.position;
+    const target = medianPoint(body.recent);
+    const wanted = clampLength(
+      {
+        x: (target.x - body.position.x) / FOLLOW_TAU_SEC,
+        y: (target.y - body.position.y) / FOLLOW_TAU_SEC,
+        z: (target.z - body.position.z) / FOLLOW_TAU_SEC,
+      },
+      MAX_BODY_SPEED_MPS,
+    );
+    const dv = clampLength(
+      { x: wanted.x - body.velocity.x, y: wanted.y - body.velocity.y, z: wanted.z - body.velocity.z },
+      MAX_BODY_ACCEL_MPS2 * dt,
+    );
+    body.velocity = { x: body.velocity.x + dv.x, y: body.velocity.y + dv.y, z: body.velocity.z + dv.z };
+    body.position = {
+      x: body.position.x + body.velocity.x * dt,
+      y: body.position.y + body.velocity.y * dt,
+      z: body.position.z + body.velocity.z * dt,
+    };
+    return body.position;
   }
 }

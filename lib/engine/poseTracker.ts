@@ -23,10 +23,16 @@ export const MAX_TRACKS = 2;
 const GATE_TORSO = 1.5;
 /** 안 보인 시간이 길수록 이어 붙일 거리를 넓힌다 (몸통 길이/초) */
 const GATE_GROWTH_TORSO_PER_SEC = 3;
+/** 몸 크기 차이를 거리로 얼마나 치는지 (크기가 e배 다르면 몸통 길이 2배만큼 떨어진 것과 같게 본다) */
+const SIZE_WEIGHT = 2;
+/** 화면 속 몸 크기가 이 이상 다르면(약 1.8배) 같은 선수로 보지 않는다 (ln 값) */
+const MAX_SIZE_GAP = Math.log(1.8);
+/** 안 보인 시간이 길수록 크기 차이 허용도 넓힌다 (몸을 크게 웅크렸다 펴는 경우 대비, ln 값/초) */
+const SIZE_GATE_GROWTH_PER_SEC = 0.5;
 /** 예측 이동이 줄어드는 시간 (초). 안 보인 지 이만큼 지나면 거의 멈춘 것으로 본다 */
 const VELOCITY_TAU_SEC = 0.4;
-/** 예측 속도 상한 (화면 높이/초) */
-const MAX_SPEED = 2;
+/** 예측 속도 상한 (화면 높이/초). 안 보이는 동안 예측으로 옮기는 거리는 최대 이 값 × 0.4초 */
+const MAX_SPEED = 1;
 /** 장면 사이가 이보다 벌어지거나 뒤로 감으면 추적을 처음부터 다시 한다 (초) */
 const RESET_GAP_SEC = 1;
 
@@ -249,7 +255,7 @@ export class PoseTracker {
 
     // 1) 기존 선수와 이번에 찾은 사람을 짝짓는다 (전체 거리 합이 가장 작은 조합)
     const predictedCenters = this.tracks.map((t) => this.predictCenter(t, timeSec));
-    const assignment = this.bestAssignment(predictedCenters, candidates.map((c) => c.torso.center), timeSec);
+    const assignment = this.bestAssignment(predictedCenters, candidates.map((c) => c.torso), timeSec);
     const used = new Set<number>();
     this.tracks.forEach((track, i) => {
       const k = assignment[i];
@@ -299,7 +305,7 @@ export class PoseTracker {
   }
 
   /** 선수마다 짝지을 사람 번호 (-1 = 이번 장면에서 못 찾음) */
-  private bestAssignment(predicted: Vec2[], centers: Vec2[], timeSec: number): number[] {
+  private bestAssignment(predicted: Vec2[], candidates: { center: Vec2; size: number }[], timeSec: number): number[] {
     let best: number[] = predicted.map(() => -1);
     let bestCost = Infinity;
     const current: number[] = [];
@@ -316,13 +322,16 @@ export class PoseTracker {
       current.push(-1);
       visit(i + 1, cost + gate, used);
       current.pop();
-      centers.forEach((c, k) => {
+      candidates.forEach(({ center: c, size }, k) => {
         if (used.has(k)) return;
         const dist = Math.hypot(c.x - predicted[i].x, c.y - predicted[i].y) / track.size;
-        if (dist > gate) return;
+        // 화면 속 몸 크기 차이: 카메라에서 먼 선수는 작게 보이므로, 엇갈려 지나갈 때 누가 누구인지 가려 준다
+        const sizeGap = Math.abs(Math.log(size / track.size));
+        const sizeGate = MAX_SIZE_GAP + SIZE_GATE_GROWTH_PER_SEC * Math.max(0, timeSec - track.lastSeenSec);
+        if (dist > gate || sizeGap > sizeGate) return;
         used.add(k);
         current.push(k);
-        visit(i + 1, cost + dist, used);
+        visit(i + 1, cost + dist + SIZE_WEIGHT * sizeGap, used);
         current.pop();
         used.delete(k);
       });

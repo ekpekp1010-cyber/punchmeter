@@ -32,6 +32,7 @@ function person(
   cy = 0.4,
   edit?: (world: Record<number, [number, number, number]>) => void,
   hidden: number[] = [],
+  scale = SCALE,
 ): PoseDetection {
   const w = standingWorld();
   edit?.(w);
@@ -42,9 +43,9 @@ function person(
     world.push({ x, y, z, visibility: 0.9 });
     const out = hidden.includes(i);
     image.push({
-      x: cx + (x * SCALE) / ASPECT,
-      y: out ? 1.1 : cy + y * SCALE,
-      z: z * SCALE,
+      x: cx + (x * scale) / ASPECT,
+      y: out ? 1.1 : cy + y * scale,
+      z: z * scale,
       visibility: out ? 0.1 : 0.9,
       presence: out ? 0.05 : 0.95,
     });
@@ -100,6 +101,16 @@ describe("선수 추적", () => {
     expect(out).toHaveLength(2);
     expect(hipX(out[0])).toBeCloseTo(0.3, 5);
     expect(hipX(out[1])).toBeCloseTo(0.7, 5);
+  });
+
+  it("앞뒤로 떨어진 두 선수가 화면에서 엇갈려 지나가도, 몸 크기로 누가 누구인지 유지한다", () => {
+    const tracker = new PoseTracker(ASPECT);
+    // 빨강(0번): 카메라 가까이 → 크게 보임, 파랑(1번): 멀리 → 작게 보임
+    tracker.update([person(0.48, 0.4, undefined, [], 0.36), person(0.52, 0.4, undefined, [], 0.2)], 0);
+    // 다음 장면: 가까운 선수는 0.505로, 먼 선수는 0.495로 엇갈림 (위치만 보면 빨강이 0.495 쪽에 더 가깝다)
+    const out = tracker.update([person(0.495, 0.4, undefined, [], 0.2), person(0.505, 0.4, undefined, [], 0.36)], FRAME);
+    expect(hipX(out[0])).toBeCloseTo(0.505, 5);
+    expect(hipX(out[1])).toBeCloseTo(0.495, 5);
   });
 
   it("영상을 뒤로 감으면 추적을 처음부터 다시 한다", () => {

@@ -2,7 +2,16 @@
 import { describe, expect, it } from "vitest";
 import type { PoseLandmark } from "../types";
 import { LANDMARK as L, LANDMARK_COUNT } from "./landmarks";
-import { focalInScreenHeights, placeInCamera, verticalFovDeg } from "./cameraModel";
+import {
+  CameraPlacer,
+  focalInScreenHeights,
+  MAX_BODY_ACCEL_MPS2,
+  MAX_BODY_SPEED_MPS,
+  placeInCamera,
+  START_WINDOW_SEC,
+  verticalFovDeg,
+} from "./cameraModel";
+import type { TrackedPerson } from "./poseTracker";
 
 const ASPECT = 16 / 9;
 const FOCAL = focalInScreenHeights(26, ASPECT); // 휴대폰 기본 카메라
@@ -77,5 +86,56 @@ describe("원근으로 선수 깊이 구하기", () => {
     const { image, world } = shoot([0, 0, 3]);
     const hidden = image.map((p) => ({ ...p, visibility: 0.1 }));
     expect(placeInCamera(hidden, world, ASPECT, FOCAL)).toBeNull();
+  });
+});
+
+describe("물리적으로 가능한 움직임만 허용", () => {
+  const FRAME = 1 / 30;
+  const tracked = (hip: [number, number, number]): TrackedPerson => ({
+    slot: 0,
+    ...shoot(hip),
+    predicted: false,
+    lostSec: 0,
+    estimatedJoints: [],
+  });
+  const depthOf = (out: TrackedPerson[]) => out[0].camera!.z;
+
+  it("처음 0.5초의 가운데 값으로 시작 위치를 정해, 그 사이 한 장면이 튀어도 흔들리지 않는다", () => {
+    const placer = new CameraPlacer();
+    let z = 0;
+    for (let i = 0; i * FRAME <= START_WINDOW_SEC + FRAME; i++) {
+      const hip: [number, number, number] = i === 5 ? [0, 0.2, 8] : [0, 0.2, 3]; // 6번째 장면만 8 m로 튐
+      z = depthOf(placer.apply([tracked(hip)], i * FRAME, ASPECT, FOCAL));
+    }
+    expect(z).toBeGreaterThan(2.85);
+    expect(z).toBeLessThan(3.15);
+  });
+
+  it("어림값이 갑자기 3 m 뒤로 튀어도 순간이동하지 않고, 속도·가속도 한계 안에서만 움직인다", () => {
+    const placer = new CameraPlacer();
+    let t = 0;
+    for (; t <= START_WINDOW_SEC + FRAME; t += FRAME) placer.apply([tracked([0, 0.2, 3])], t, ASPECT, FOCAL);
+    const zs: number[] = [];
+    for (let i = 0; i < 60; i++, t += FRAME) zs.push(depthOf(placer.apply([tracked([0, 0.2, 6])], t, ASPECT, FOCAL)));
+    const speeds = zs.slice(1).map((z, i) => (z - zs[i]) / FRAME);
+    const accels = speeds.slice(1).map((v, i) => Math.abs(v - speeds[i]) / FRAME);
+    expect(Math.max(...speeds.map(Math.abs))).toBeLessThanOrEqual(MAX_BODY_SPEED_MPS + 1e-6);
+    expect(Math.max(...accels)).toBeLessThanOrEqual(MAX_BODY_ACCEL_MPS2 + 1e-6);
+    // 한 장면 사이 이동은 5 m/s × 1/30초 ≈ 0.17 m를 넘지 않는다
+    expect(zs[0] - 3).toBeLessThan(0.17);
+    // 계속 그 자리면 결국 따라간다 (2초 뒤)
+    expect(zs.at(-1)!).toBeGreaterThan(5.7);
+  });
+
+  it("한두 장면만 튀는 값은 무시한다 (최근 5장면 가운데 값)", () => {
+    const placer = new CameraPlacer();
+    let t = 0;
+    for (; t <= START_WINDOW_SEC + FRAME; t += FRAME) placer.apply([tracked([0, 0.2, 3])], t, ASPECT, FOCAL);
+    let max = 0;
+    for (let i = 0; i < 30; i++, t += FRAME) {
+      const hip: [number, number, number] = i === 3 || i === 4 ? [0, 0.2, 9] : [0, 0.2, 3];
+      max = Math.max(max, depthOf(placer.apply([tracked(hip)], t, ASPECT, FOCAL)));
+    }
+    expect(max).toBeLessThan(3.05);
   });
 });

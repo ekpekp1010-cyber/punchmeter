@@ -21,6 +21,8 @@ export interface ScenePerson {
   predicted: boolean;
   /** 카메라 기준 위치로 옮길 거리 (m, 원근 반영). 없으면 정면 4 m에 세운다 */
   camera?: CameraPoint;
+  /** 영상 구도 따라가기: 관절마다 카메라 공간 위치 (m). 있으면 camera 대신 이것으로 세운다 */
+  cameraJoints?: PoseLandmark[];
 }
 
 /** 관절 하나, 또는 두 관절의 가운데 */
@@ -296,12 +298,20 @@ export class Figure3DScene {
         mannequin.hide();
         return;
       }
-      // 카메라 공간(MediaPipe 방향: y 아래, z 멀어짐) → three.js(y 위, z 보는 사람 쪽)
+      // 예측으로 보여 주는 선수는 흐리게
+      const opacity = (options.opacity ?? 1) * (person.predicted ? PREDICTED_OPACITY : 1);
+      if (person.cameraJoints) {
+        // 영상 구도 따라가기: 관절이 이미 카메라 공간에 있으므로 그대로 세운다
+        const j = person.cameraJoints;
+        const hip = { x: (j[L.leftHip].x + j[L.rightHip].x) / 2, y: (j[L.leftHip].y + j[L.rightHip].y) / 2, z: (j[L.leftHip].z + j[L.rightHip].z) / 2 };
+        placed.push(new THREE.Vector3(hip.x, -hip.y, -hip.z));
+        minY = Math.min(minY, mannequin.update(j, new THREE.Vector3(), { ...options, opacity }));
+        return;
+      }
+      // 3D 공간 재구성: 엉덩이 원점 3D 관절을 카메라 공간(MediaPipe 방향: y 아래, z 멀어짐) → three.js(y 위, z 보는 사람 쪽)로 옮긴다
       const cam = person.camera ?? { x: 0, y: 0, z: DEFAULT_DEPTH_M };
       const offset = new THREE.Vector3(cam.x, -cam.y, -cam.z);
       placed.push(offset);
-      // 예측으로 보여 주는 선수는 흐리게
-      const opacity = (options.opacity ?? 1) * (person.predicted ? PREDICTED_OPACITY : 1);
       minY = Math.min(minY, mannequin.update(person.world, offset, { ...options, opacity }));
     });
     if (placed.length > 0) {

@@ -16,6 +16,7 @@ import { SkeletonNormalizer } from "@/lib/engine/bodyLengths";
 import {
   CAMERA_PRESETS,
   CameraPlacer,
+  CompositionPlacer,
   focalInScreenHeights,
   verticalFovDeg,
   type CameraPresetId,
@@ -33,6 +34,12 @@ const KEY_JOINTS = [LANDMARK.leftWrist, LANDMARK.rightWrist, LANDMARK.leftAnkle,
 const SPEEDS = [0.25, 0.5, 1] as const;
 
 type ViewMode = "3d" | "figure" | "joints";
+/**
+ * 모델 배치 방식
+ * - follow: 영상 구도 따라가기 (기본). 모델이 영상 속 선수와 같은 자리·자세. 카메라가 움직이는 경기 영상에도 안정적
+ * - reconstruct: 3D 공간 재구성 (이전 방식). 카메라가 고정된 직접 촬영 영상에서만 의미가 있다
+ */
+type Placement = "follow" | "reconstruct";
 
 interface Stats {
   frames: number;
@@ -89,6 +96,8 @@ export default function PoseTest() {
   const focal35Ref = useRef<number>(presetFocal("phone"));
   /** 선수 A·B 키 (cm, 비우면 null) */
   const heightsRef = useRef<(number | null)[]>([null, null]);
+  /** 모델 배치 방식 (분석 중에 바꿔도 다음 장면부터 반영) */
+  const placementRef = useRef<Placement>("follow");
   /** 지금 분석 회차의 뼈 길이 고정기 (키를 바꾸면 바로 반영) */
   const normalizerRef = useRef<SkeletonNormalizer | null>(null);
 
@@ -101,6 +110,9 @@ export default function PoseTest() {
   const [viewMode, setViewMode] = useState<ViewMode>("3d");
   const [cameraPreset, setCameraPreset] = useState<CameraPresetId>("phone");
   const [heightInputs, setHeightInputs] = useState(["", ""]);
+  const [placement, setPlacement] = useState<Placement>("follow");
+  /** 영상의 가로÷세로 비율 (시뮬레이션 칸도 같은 비율로 맞춰야 영상 구도와 겹친다) */
+  const [videoAspect, setVideoAspect] = useState(16 / 9);
 
   // 3D 장면 준비 (화면을 떠나면 그래픽 자원을 정리한다)
   useEffect(() => {
@@ -249,6 +261,7 @@ export default function PoseTest() {
     heightsRef.current.forEach((cm, slot) => normalizer.setHeightCm(slot, cm));
     normalizerRef.current = normalizer;
     const placer = new CameraPlacer();
+    const composer = new CompositionPlacer();
     const timeline = new PoseTimeline();
     const skippedAtStart = analyzer.skipped;
 
@@ -310,7 +323,11 @@ export default function PoseTest() {
       const smoothed = smoother.apply(tracked, result.mediaTime);
       const fixedSize = normalizer.apply(smoothed, result.mediaTime);
       const focal = focalInScreenHeights(focal35Ref.current, aspectRef.current);
-      const placed = placer.apply(fixedSize, result.mediaTime, aspectRef.current, focal);
+      // 두 방식 모두 계속 계산해 두어, 분석 중에 방식을 바꿔도 바로 이어진다
+      const reconstructed = placer.apply(fixedSize, result.mediaTime, aspectRef.current, focal);
+      const followed = composer.apply(reconstructed, result.mediaTime, aspectRef.current, focal);
+      const placed =
+        placementRef.current === "follow" ? followed : followed.map((p) => ({ ...p, cameraJoints: undefined }));
 
       // 바로 그리지 않고 쌓아 둔다. 그리기는 아래 render 반복이 모니터 새로고침마다 한다
       timeline.push(result.mediaTime, placed, performance.now());
@@ -420,6 +437,21 @@ export default function PoseTest() {
           </select>
         </label>
         <label className="flex items-center gap-1 text-sm">
+          배치 방식
+          <select
+            value={placement}
+            onChange={(e) => {
+              const value = e.target.value as Placement;
+              setPlacement(value);
+              placementRef.current = value;
+            }}
+            className="rounded border px-2 py-1"
+          >
+            <option value="follow">영상 구도 따라가기 (권장)</option>
+            <option value="reconstruct">3D 공간 재구성 (고정 카메라용)</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-sm">
           촬영 카메라
           <select
             value={cameraPreset}
@@ -474,7 +506,18 @@ export default function PoseTest() {
         <div>
           <h2 className="mb-1 font-semibold">원본 영상</h2>
           {videoUrl ? (
-            <video ref={videoRef} src={videoUrl} controls playsInline onError={onVideoError} className="w-full rounded bg-black" />
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              controls
+              playsInline
+              onError={onVideoError}
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget;
+                if (v.videoHeight > 0) setVideoAspect(v.videoWidth / v.videoHeight);
+              }}
+              className="w-full rounded bg-black"
+            />
           ) : (
             <div className="flex aspect-video items-center justify-center rounded bg-gray-100 text-gray-500">영상을 골라 주세요</div>
           )}
@@ -482,12 +525,20 @@ export default function PoseTest() {
         <div>
           <h2 className="mb-1 font-semibold">분석 시뮬레이션 (빨강·파랑 = 선수 A·B)</h2>
           {/* 두 칸 모두 늘 만들어 두고 보기 방식에 따라 하나만 보인다 (전환해도 준비된 3D 장면이 사라지지 않게) */}
-          <div ref={view3dRef} className={`aspect-video w-full overflow-hidden rounded bg-gray-900 ${viewMode === "3d" ? "" : "hidden"}`} />
-          <canvas ref={canvasRef} className={`aspect-video w-full rounded bg-gray-900 ${viewMode === "3d" ? "hidden" : ""}`} />
+          <div
+            ref={view3dRef}
+            style={{ aspectRatio: videoAspect }}
+            className={`w-full overflow-hidden rounded bg-gray-900 ${viewMode === "3d" ? "" : "hidden"}`}
+          />
+          <canvas
+            ref={canvasRef}
+            style={{ aspectRatio: videoAspect }}
+            className={`w-full rounded bg-gray-900 ${viewMode === "3d" ? "hidden" : ""}`}
+          />
           {viewMode === "3d" && (
             <p className="mt-1 text-xs text-gray-500">
-              마우스 왼쪽 끌기: 돌리기 · 휠: 확대/축소 · 오른쪽 끌기: 옮기기. 멀리 있어 작게 보이는 선수는 그만큼 뒤에 세워요 (원근 반영).
-              앞뒤 거리가 실제와 다르면 [촬영 카메라]를 바꿔 보세요.
+              마우스 왼쪽 끌기: 돌리기 · 휠: 확대/축소 · 오른쪽 끌기: 옮기기. [영상 구도 따라가기]에서는 영상 시점으로 볼 때 모델이 영상 속 선수와 같은 자리에 겹쳐 보여요.
+              앞뒤 거리는 어림값이라 [옆에서 보기]에서는 참고로만 보세요.
             </p>
           )}
         </div>

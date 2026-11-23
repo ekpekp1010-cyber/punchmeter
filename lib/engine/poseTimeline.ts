@@ -47,6 +47,7 @@ export function lerpPeople(a: TrackedPerson[], b: TrackedPerson[], u: number): T
         pa.camera && pb.camera
           ? { x: lerp(pa.camera.x, pb.camera.x, u), y: lerp(pa.camera.y, pb.camera.y, u), z: lerp(pa.camera.z, pb.camera.z, u) }
           : pb.camera,
+      cameraJoints: pa.cameraJoints && pb.cameraJoints ? lerpList(pa.cameraJoints, pb.cameraJoints, u) : pb.cameraJoints,
       predicted: u < 0.5 ? pa.predicted : pb.predicted,
     };
   });

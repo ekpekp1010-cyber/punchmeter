@@ -4,6 +4,8 @@ import type { PoseLandmark } from "../types";
 import { LANDMARK as L, LANDMARK_COUNT } from "./landmarks";
 import {
   CameraPlacer,
+  composeInCamera,
+  CompositionPlacer,
   focalInScreenHeights,
   MAX_BODY_ACCEL_MPS2,
   MAX_BODY_SPEED_MPS,
@@ -137,5 +139,35 @@ describe("물리적으로 가능한 움직임만 허용", () => {
       max = Math.max(max, depthOf(placer.apply([tracked(hip)], t, ASPECT, FOCAL)));
     }
     expect(max).toBeLessThan(3.05);
+  });
+});
+
+describe("영상 구도 따라가기", () => {
+  it("카메라 공간에 놓은 관절을 다시 화면으로 비추면 영상 속 위치와 정확히 같다 (깊이를 얼마로 어림하든)", () => {
+    const { image, world } = shoot([0.3, 0.2, 3]);
+    for (const depth of [2, 3, 7]) {
+      const joints = composeInCamera(image, world, ASPECT, FOCAL, depth);
+      for (const i of [L.leftWrist, L.rightAnkle, L.leftShoulder, L.rightHip]) {
+        expect(0.5 + (joints[i].x * FOCAL) / joints[i].z / ASPECT).toBeCloseTo(image[i].x, 9);
+        expect(0.5 + (joints[i].y * FOCAL) / joints[i].z).toBeCloseTo(image[i].y, 9);
+      }
+    }
+  });
+
+  it("관절의 앞뒤 차이(3D 관절의 z)는 유지한다", () => {
+    const { image, world } = shoot([0, 0.2, 3], 0.3); // 상체를 0.3 m 앞으로 숙임
+    const joints = composeInCamera(image, world, ASPECT, FOCAL, 3);
+    expect(joints[L.leftHip].z - joints[L.leftShoulder].z).toBeCloseTo(0.3, 9);
+  });
+
+  it("카메라가 따라 움직여 선수가 화면에서 크게 이동해도, 모델은 영상과 같은 자리로 바로 옮겨 간다", () => {
+    const composer = new CompositionPlacer();
+    const FRAME = 1 / 30;
+    const at = (hip: [number, number, number]): TrackedPerson => ({ slot: 0, ...shoot(hip), predicted: false, lostSec: 0, estimatedJoints: [] });
+    composer.apply([at([-0.8, 0.2, 3])], 0, ASPECT, FOCAL);
+    const out = composer.apply([at([0.8, 0.2, 3])], FRAME, ASPECT, FOCAL)[0];
+    const j = out.cameraJoints!;
+    const hipX = 0.5 + ((j[L.leftHip].x + j[L.rightHip].x) / 2 / ((j[L.leftHip].z + j[L.rightHip].z) / 2)) * (FOCAL / ASPECT);
+    expect(hipX).toBeCloseTo((out.image[L.leftHip].x + out.image[L.rightHip].x) / 2, 6);
   });
 });

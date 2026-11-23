@@ -58,6 +58,8 @@ export interface TrackedPerson {
   estimatedJoints: number[];
   /** 3D 관절을 카메라 공간(원근 반영)으로 옮길 거리 (m). CameraPlacer가 채운다 */
   camera?: CameraPoint;
+  /** 영상 구도 따라가기: 관절마다 카메라 공간 위치 (m). CompositionPlacer가 채운다 */
+  cameraJoints?: PoseLandmark[];
 }
 
 interface Vec2 {

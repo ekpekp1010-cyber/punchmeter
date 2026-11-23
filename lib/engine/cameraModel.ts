@@ -5,6 +5,7 @@
 
 import type { PoseLandmark } from "../types";
 import { LANDMARK as L } from "./landmarks";
+import { OneEuroFilter } from "./smoothing";
 import type { TrackedPerson } from "./poseTracker";
 
 /** 35mm 필름 대각선 길이 (mm). "35mm 환산 초점거리"의 기준 */
@@ -236,5 +237,77 @@ export class CameraPlacer {
       z: body.position.z + body.velocity.z * dt,
     };
     return body.position;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 영상 구도 따라가기 (기본 방식)
+// ─────────────────────────────────────────────
+// 선수 위치를 "고정된 3D 공간"에 재구성하지 않고, 영상에 보이는 구도를 그대로 따른다.
+// 관절마다 화면 속 위치를 지나는 시선(카메라에서 뻗은 직선) 위에 놓고, 앞뒤 거리만 어림한다.
+// 그래서 영상 시점에서 보면 모델이 영상 속 선수와 정확히 같은 자리·같은 자세로 보이고,
+// 중계 카메라가 돌거나 당겨져도 모델이 엉뚱하게 날아가지 않는다 (카메라가 움직이면 모델도 영상처럼 움직인다).
+
+/**
+ * 관절을 카메라 공간(m)에 놓는다: 화면 속 위치는 그대로, 깊이 = 선수 깊이 + 관절별 앞뒤 차이(3D 관절의 z).
+ * @param depth 선수 엉덩이 가운데까지의 거리 (m)
+ */
+export function composeInCamera(
+  image: PoseLandmark[],
+  world: PoseLandmark[],
+  aspect: number,
+  focalHeights: number,
+  depth: number,
+): PoseLandmark[] {
+  const hipZ = (world[L.leftHip].z + world[L.rightHip].z) / 2;
+  return image.map((p, i) => {
+    const z = Math.max(0.3, depth + ((world[i]?.z ?? hipZ) - hipZ));
+    return {
+      x: (((p.x - 0.5) * aspect) * z) / focalHeights,
+      y: ((p.y - 0.5) * z) / focalHeights,
+      z,
+      visibility: p.visibility,
+    };
+  });
+}
+
+/** 선수 깊이(앞뒤 거리) 거르기: 영상 시점 모습에는 영향이 없고 옆에서 볼 때만 쓰이므로 크게 걸러 흔들림을 없앤다 */
+const DEPTH_MIN_CUTOFF_HZ = 0.3;
+const DEPTH_BETA = 0.3;
+
+/** 영상 구도를 따라 선수마다 카메라 공간 관절(cameraJoints)을 붙인다 */
+export class CompositionPlacer {
+  private filters = new Map<number, OneEuroFilter>();
+  private lastDepth = new Map<number, number>();
+  private lastTimeSec: number | null = null;
+  private focalHeights: number | null = null;
+
+  reset() {
+    this.filters.clear();
+    this.lastDepth.clear();
+    this.lastTimeSec = null;
+  }
+
+  apply(people: TrackedPerson[], timeSec: number, aspect: number, focalHeights: number): TrackedPerson[] {
+    if ((this.lastTimeSec !== null && timeSec < this.lastTimeSec) || this.focalHeights !== focalHeights) this.reset();
+    this.lastTimeSec = timeSec;
+    this.focalHeights = focalHeights;
+
+    return people.map((person) => {
+      const raw = placeInCamera(person.image, person.world, aspect, focalHeights);
+      let depth = this.lastDepth.get(person.slot);
+      if (raw) {
+        let filter = this.filters.get(person.slot);
+        if (!filter) {
+          filter = new OneEuroFilter(DEPTH_MIN_CUTOFF_HZ, DEPTH_BETA);
+          this.filters.set(person.slot, filter);
+        }
+        const hipZ = (person.world[L.leftHip].z + person.world[L.rightHip].z) / 2;
+        depth = filter.filter(raw.z + hipZ, timeSec);
+        this.lastDepth.set(person.slot, depth);
+      }
+      if (depth === undefined) return { ...person };
+      return { ...person, cameraJoints: composeInCamera(person.image, person.world, aspect, focalHeights, depth) };
+    });
   }
 }

@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import type { PoseLandmark } from "@/lib/types";
 import { createVideoPoseLandmarker, LANDMARK, PoseLandmarker } from "@/lib/engine/poseLandmarker";
 import { PoseTracker, type TrackedPerson } from "@/lib/engine/poseTracker";
+import { PoseSmoother } from "@/lib/engine/smoothing";
+import { PoseTimeline } from "@/lib/engine/poseTimeline";
 import { drawBodyFigure, drawSkeleton, PREDICTED_OPACITY } from "@/components/result/bodyFigure";
 import { Figure3DScene } from "@/components/result/bodyFigure3D";
 
@@ -67,6 +69,8 @@ export default function PoseTest() {
   const lastPeopleRef = useRef<TrackedPerson[]>([]);
   /** 장면마다 찾은 사람을 선수 2명으로 이어 붙이고, 안 보이는 선수는 예측한다 */
   const trackerRef = useRef<PoseTracker | null>(null);
+  /** 화면 그리기 반복(모니터 새로고침마다)의 번호 */
+  const renderHandleRef = useRef<number | null>(null);
   const viewModeRef = useRef<ViewMode>("3d");
   const view3dRef = useRef<HTMLDivElement>(null);
   const scene3dRef = useRef<Figure3DScene | null>(null);
@@ -156,6 +160,8 @@ export default function PoseTest() {
     const video = videoRef.current;
     if (video && frameHandleRef.current !== null) video.cancelVideoFrameCallback(frameHandleRef.current);
     frameHandleRef.current = null;
+    if (renderHandleRef.current !== null) cancelAnimationFrame(renderHandleRef.current);
+    renderHandleRef.current = null;
   }
 
   function onPickFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -204,6 +210,9 @@ export default function PoseTest() {
     // 처음부터 다시 분석하므로 선수 추적도 새로 시작한다
     const tracker = new PoseTracker(aspectRef.current);
     trackerRef.current = tracker;
+    // 떨림을 거르고(smoother), 분석한 장면 사이를 채워(timeline) 부드럽게 그린다
+    const smoother = new PoseSmoother();
+    const timeline = new PoseTimeline();
     setStats(EMPTY_STATS);
     setAnalyzing(true);
     setStatus("분석 중… (영상을 재생하며 장면마다 관절을 찾아요)");
@@ -288,8 +297,8 @@ export default function PoseTest() {
       }
       lastPresented = metadata.presentedFrames;
 
-      lastPeopleRef.current = tracked;
-      draw(tracked);
+      // 바로 그리지 않고 쌓아 둔다. 그리기는 아래 render 반복이 모니터 새로고침마다 한다
+      timeline.push(metadata.mediaTime, smoother.apply(tracked, metadata.mediaTime), performance.now());
 
       if (frames % 10 === 0) setStats(snapshot());
     };
@@ -312,7 +321,24 @@ export default function PoseTest() {
     video.currentTime = 0;
     video.playbackRate = speed;
     video.muted = true;
+    // 그리기 반복: 분석은 영상 장면이 나올 때만 되지만(0.25배속 30fps 영상이면 1초에 7.5장),
+    // 그리기는 모니터가 화면을 바꿀 때마다(초당 약 60번) 앞뒤 장면 사이 자세를 채워 한다
+    let lastDrawnTime: number | null = null;
+    let lastVersion = -1;
+    const render = () => {
+      if (sessionRef.current !== session) return;
+      renderHandleRef.current = requestAnimationFrame(render);
+      const t = timeline.displayTime(performance.now(), video.playbackRate, video.paused);
+      if (t === null || (t === lastDrawnTime && timeline.version === lastVersion)) return; // 바뀐 게 없으면 건너뜀
+      lastDrawnTime = t;
+      lastVersion = timeline.version;
+      const people = timeline.sampleAt(t);
+      lastPeopleRef.current = people;
+      draw(people);
+    };
+
     frameHandleRef.current = video.requestVideoFrameCallback(onFrame);
+    renderHandleRef.current = requestAnimationFrame(render);
     void video.play();
   }
 

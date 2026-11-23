@@ -162,7 +162,7 @@ export class Stage {
     this.renderer.shadowMap.enabled = true;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(0x1f2430);
+    this.scene.background = new THREE.Color(0x161210); // 따뜻한 먹색 (Forge Gate 바탕과 어울리게)
     this.camera = new THREE.PerspectiveCamera(35, 1, 0.1, 60);
     this.camera.position.set(0, 1.45, 4.6);
 
@@ -185,7 +185,7 @@ export class Stage {
 
   /** 조명과 바닥 */
   private buildEnvironment() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.5));
+    this.scene.add(new THREE.HemisphereLight(0xfff4ea, 0x4a3528, 1.5));
     const sun = new THREE.DirectionalLight(0xffffff, 2);
     sun.position.set(2.5, 5, 3);
     sun.castShadow = true;
@@ -195,10 +195,14 @@ export class Stage {
     sun.shadow.camera.top = 3;
     sun.shadow.camera.bottom = -3;
     this.scene.add(sun);
+    // 뒤에서 비추는 은은한 구리빛 (화로 빛 느낌, 그림용) — 몸 윤곽이 바탕에서 떠 보이게
+    const rim = new THREE.DirectionalLight(0xc5794b, 0.9);
+    rim.position.set(-2, 2.5, -4);
+    this.scene.add(rim);
 
     const floor = new THREE.Mesh(
       new THREE.CircleGeometry(4, 64),
-      new THREE.MeshStandardMaterial({ color: 0x3a4150, roughness: 0.95 }),
+      new THREE.MeshStandardMaterial({ color: 0x2b221d, roughness: 0.95 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;

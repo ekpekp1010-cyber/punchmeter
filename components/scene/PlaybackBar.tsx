@@ -18,7 +18,7 @@ interface Props {
 }
 
 const chip = (on: boolean) =>
-  `rounded px-2 py-1 text-xs tabular-nums ${on ? "bg-zinc-200 text-zinc-900" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`;
+  `rounded px-2 py-1 text-xs tabular-nums ${on ? "bg-ember text-zinc-950 font-medium" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`;
 
 export default function PlaybackBar({ rate, playing, paused, canPlay, canReplay, onPlay, onPauseToggle, onReplay, onRate }: Props) {
   return (
@@ -27,7 +27,7 @@ export default function PlaybackBar({ rate, playing, paused, canPlay, canReplay,
         type="button"
         onClick={onPlay}
         disabled={!canPlay}
-        className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+        className="rounded bg-ember px-4 py-1.5 text-sm font-semibold text-zinc-950 shadow-[0_0_24px_rgba(197,121,75,0.35)] hover:brightness-110 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
       >
         ▶ 재생
       </button>

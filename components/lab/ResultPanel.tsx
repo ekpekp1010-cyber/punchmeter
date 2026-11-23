@@ -93,7 +93,7 @@ export default function ResultPanel({ results, contactedCount, selected, onSelec
               role="tab"
               aria-selected={i === selected}
               onClick={() => onSelect(i)}
-              className={`rounded px-2 py-0.5 text-xs ${i === selected ? "bg-zinc-200 text-zinc-900" : "bg-zinc-800 text-zinc-300"} ${
+              className={`rounded px-2 py-0.5 text-xs ${i === selected ? "bg-ember text-zinc-950 font-medium" : "bg-zinc-800 text-zinc-300"} ${
                 i >= contactedCount ? "opacity-50" : ""
               }`}
             >

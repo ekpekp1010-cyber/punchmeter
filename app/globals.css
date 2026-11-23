@@ -1,26 +1,106 @@
 @import "tailwindcss";
 
+/*
+ * 디자인: motionsites.ai의 무료 디자인 "Forge Gate"(Embers Foundry)의 색·글꼴·구성을 펀치미터에 맞게 옮김 (사용자 요청).
+ * 그 디자인의 그림·영상 파일은 쓰지 않고(외부 서버 파일이라), 색 토큰·글꼴(Archivo·Onest, 무료 Google Fonts)·
+ * 얇은 선·번호 캡션·가려진 글자가 미끄러져 나오는 등장 방식만 가져왔다.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Forge Gate 색 토큰 */
+  --deep: #121110; /* 바탕 */
+  --dark: #1f1815; /* 카드·칸 바탕 */
+  --accent: #5d3827; /* 구리 그림자 */
+  --soft: #c5794b; /* 구리 빛 (강조) */
+  --light: #ede3da; /* 글자 */
+  --background: var(--deep);
+  --foreground: var(--light);
+  /* 화면 등장에 쓰는 곡선 (Forge Gate와 같은 값) */
+  --ease-quart-out: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-cubic-out: cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* 한글은 Onest·Archivo에 없어서 운영체제 한글 글꼴로 이어진다 */
+  --font-sans: var(--font-onest), "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-display: var(--font-archivo), "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --color-ember: var(--soft);
+  --color-ember-deep: var(--accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/*
+ * 화면 곳곳에 쓴 zinc(회색) 단계를 Forge Gate의 따뜻한 먹색·크림색으로 바꾼다.
+ * (부품마다 색 이름을 고치지 않고 한곳에서 바꾸기 위해)
+ */
+@theme {
+  --color-zinc-50: #f6f0ea;
+  --color-zinc-100: #ede3da;
+  --color-zinc-200: #e0d2c5;
+  --color-zinc-300: #c9b8aa;
+  --color-zinc-400: #a8968a;
+  --color-zinc-500: #85756a;
+  --color-zinc-600: #5f524a;
+  --color-zinc-700: #43372f;
+  --color-zinc-800: #2c231e;
+  --color-zinc-900: #1f1815;
+  --color-zinc-950: #121110;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 넓은 제목 글꼴 (Archivo, 폭 125%) */
+.font-display {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+}
+
+/* 칸 제목: 넓은 글꼴 + 글자 간격 */
+main section h2 {
+  font-family: var(--font-display);
+  font-stretch: 112%;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 가려진 틀 안에서 글자가 아래(또는 위)에서 미끄러져 나온다 (Forge Gate 등장 방식) */
+.reveal {
+  display: block;
+  overflow: hidden;
+}
+.reveal > * {
+  display: block;
+  animation: reveal-up 0.9s var(--ease-quart-out) both;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes reveal-up {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: none;
+  }
+}
+.fade-in {
+  animation: fade-in 0.8s var(--ease-cubic-out) both;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal > *,
+  .fade-in {
+    animation: none;
+  }
 }

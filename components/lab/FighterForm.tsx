@@ -86,7 +86,7 @@ export default function FighterForm({ draft, errors, fighter, onChange }: Props)
               role="radio"
               aria-checked={draft.sex === s}
               onClick={() => set({ sex: s })}
-              className={`rounded px-3 py-0.5 ${draft.sex === s ? "bg-zinc-200 text-zinc-900" : "bg-zinc-800 text-zinc-300"}`}
+              className={`rounded px-3 py-0.5 ${draft.sex === s ? "bg-ember text-zinc-950 font-medium" : "bg-zinc-800 text-zinc-300"}`}
             >
               {SEX_LABEL[s]}
             </button>
@@ -143,7 +143,7 @@ export default function FighterForm({ draft, errors, fighter, onChange }: Props)
               aria-checked={draft.gloveOz === oz}
               onClick={() => set({ gloveOz: oz })}
               className={`rounded px-2 py-0.5 tabular-nums ${
-                draft.gloveOz === oz ? "bg-zinc-200 text-zinc-900" : "bg-zinc-800 text-zinc-300"
+                draft.gloveOz === oz ? "bg-ember text-zinc-950 font-medium" : "bg-zinc-800 text-zinc-300"
               }`}
             >
               {oz === 0 ? "맨손" : `${oz}oz`}

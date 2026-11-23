@@ -39,7 +39,7 @@ interface Props {
   onChange: (d: JointLockDraft) => void;
 }
 
-const btn = (on: boolean) => `rounded px-2 py-0.5 ${on ? "bg-zinc-200 text-zinc-900" : "bg-zinc-800 text-zinc-300"}`;
+const btn = (on: boolean) => `rounded px-2 py-0.5 ${on ? "bg-ember text-zinc-950 font-medium" : "bg-zinc-800 text-zinc-300"}`;
 
 export default function JointLockPanel({ draft, judgment, onChange }: Props) {
   const ids = { lock: useId(), angle: useId() };

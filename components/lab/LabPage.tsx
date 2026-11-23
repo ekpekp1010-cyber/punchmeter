@@ -64,6 +64,14 @@ interface Playback {
   reached: boolean;
 }
 
+/** 머리말 번호 캡션: 사용 순서 (제목, 설명) */
+const HEADER_STEPS: [string, string][] = [
+  ["선수 정보", "몸무게 · 키 · 글러브"],
+  ["기술 · 연타", "부위 · 속도 · 수비 · 빽스텝"],
+  ["3D 재생", "닿는 순간 진행 방향 화살표"],
+  ["결과 · 근거", "연구 출처와 추정 범위"],
+];
+
 const IDLE: Playback = { playing: false, paused: false, current: -1, contacted: 0, contactedAt: -1, reached: true };
 
 /** 기술 칸 → 연타 한 칸 (빽스텝은 움직임 칸, 타격은 속도가 올바를 때만) */
@@ -232,8 +240,41 @@ export default function LabPage() {
   return (
     <>
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 print:hidden">
-      <header className="border-b border-zinc-800 px-5 py-3">
-        <h1 className="text-lg font-semibold">펀치미터 · 타격 실험실</h1>
+      {/* 머리말: Forge Gate 디자인의 넓은 제목 + 짧은 소개 + 번호 캡션 (가려진 틀에서 미끄러져 나옴) */}
+      <header className="relative overflow-hidden border-b border-zinc-800 px-5 pb-4 pt-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_140%_at_88%_0%,rgba(197,121,75,0.2),transparent_65%)]"
+        />
+        <div className="relative flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+          <h1>
+            <span className="reveal">
+              <span className="font-display text-4xl font-semibold uppercase leading-none tracking-tight sm:text-6xl">PunchMeter</span>
+            </span>
+            <span className="reveal mt-2">
+              <span className="text-sm text-zinc-300" style={{ "--delay": "180ms" } as React.CSSProperties}>
+                펀치미터 · 3D 타격 실험실
+              </span>
+            </span>
+          </h1>
+          <p className="fade-in max-w-xs text-xs leading-relaxed text-zinc-300" style={{ "--delay": "350ms" } as React.CSSProperties}>
+            선수와 기술·부위·속도를 정하면 사람 같은 3D 캐릭터로 재생하고, 힘·에너지·의학적 판단을 연구 근거와 함께 보여 줘요.
+          </p>
+        </div>
+        <ol className="relative mt-5 grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="사용 순서">
+          {HEADER_STEPS.map(([title, sub], i) => (
+            <li key={title} className="reveal">
+              <span className="flex items-center gap-3" style={{ "--delay": `${300 + i * 90}ms` } as React.CSSProperties}>
+                <span className="font-display text-2xl font-light leading-none text-ember">{String(i + 1).padStart(2, "0")}</span>
+                <span className="border-l border-zinc-600 pl-3 text-xs leading-snug text-zinc-300">
+                  {title}
+                  <br />
+                  <span className="text-zinc-500">{sub}</span>
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
       </header>
       <main className="flex flex-1 flex-col gap-4 p-4 lg:flex-row">
         <aside className="flex w-full flex-col gap-4 lg:w-96 lg:shrink-0">

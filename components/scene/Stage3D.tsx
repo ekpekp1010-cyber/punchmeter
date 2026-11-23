@@ -81,7 +81,7 @@ export default function Stage3D({ fighterA, fighterB, onReady, className }: Prop
   }, [stage, loadStatus, fighterA, fighterB]);
 
   return (
-    <div className={`relative overflow-hidden rounded-lg bg-[#1f2430] ${className ?? ""}`}>
+    <div className={`relative overflow-hidden rounded-lg border border-zinc-800 bg-[#161210] ${className ?? ""}`}>
       <div ref={mountRef} className="absolute inset-0" />
       <div className="pointer-events-none absolute left-3 top-3 flex gap-3 text-xs font-medium">
         <span className="rounded bg-black/40 px-2 py-1 text-red-300">● 선수 A</span>

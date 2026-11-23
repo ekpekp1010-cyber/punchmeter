@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { solveTwoBone } from "@/lib/motion/ik";
 import type { ModelInfo } from "@/lib/motion/bodyShape";
 import type { BodyPart, GloveOz } from "@/lib/types";
-import { disposeGlove, gloveLook, makeGlove, type FistShape, type GloveLook } from "./glove";
+import { CUFF_MEASURE_M, disposeGlove, gloveLook, makeGlove, type CuffShape, type FistShape, type GloveLook } from "./glove";
 import type { StageFighter } from "./stage";
 
 export type ArmSide = "l" | "r";
@@ -82,11 +82,58 @@ export class FighterRig {
     // 주먹 쥔 자세에서 주먹 크기를 재 둔다 (글러브 크기)
     fighter.model.updateMatrixWorld(true);
     this.fistShape = { l: this.measureFist("l"), r: this.measureFist("r") };
+    this.cuffShape = { l: this.measureCuff("l"), r: this.measureCuff("r") };
   }
 
   // ── 글러브 ──
 
   private readonly fistShape: Record<ArmSide, FistShape>;
+  private readonly cuffShape: Record<ArmSide, CuffShape>;
+
+  /** 손목 근처 팔뚝 살의 굵기·방향을 팔뚝뼈 기준으로 잰다 (글러브 손목 띠가 팔에 맞게) */
+  private measureCuff(side: ArmSide): CuffShape {
+    const lower = this.bone(`lowerarm_${side}`);
+    const wrist = this.pos(`hand_${side}`);
+    const y = this.pos(`lowerarm_${side}`).sub(wrist).normalize(); // 손목 → 팔꿈치
+    const x = this.pos(`index_01_${side}`).sub(this.pos(`pinky_01_${side}`));
+    x.addScaledVector(y, -x.dot(y)).normalize();
+    const z = new THREE.Vector3().crossVectors(x, y);
+    const minX = { v: Infinity }, maxX = { v: -Infinity }, minZ = { v: Infinity }, maxZ = { v: -Infinity };
+    const name = `lowerarm_${side}`;
+    const p = new THREE.Vector3();
+    for (const mesh of this.fighter.meshes) {
+      const skinIndex = mesh.geometry.getAttribute("skinIndex");
+      const skinWeight = mesh.geometry.getAttribute("skinWeight");
+      if (!skinIndex || !skinWeight) continue;
+      for (let i = 0; i < skinIndex.count; i++) {
+        let best = 0;
+        for (let j = 1; j < 4; j++) if (skinWeight.getComponent(i, j) > skinWeight.getComponent(i, best)) best = j;
+        if (mesh.skeleton.bones[skinIndex.getComponent(i, best)]?.name !== name) continue;
+        mesh.localToWorld(mesh.getVertexPosition(i, p)).sub(wrist);
+        const t = p.dot(y);
+        if (t < 0 || t > CUFF_MEASURE_M) continue;
+        const px = p.dot(x);
+        const pz = p.dot(z);
+        minX.v = Math.min(minX.v, px);
+        maxX.v = Math.max(maxX.v, px);
+        minZ.v = Math.min(minZ.v, pz);
+        maxZ.v = Math.max(maxZ.v, pz);
+      }
+    }
+    const scale = lower.getWorldScale(new THREE.Vector3()).x;
+    const centerWorld = wrist
+      .clone()
+      .addScaledVector(x, (minX.v + maxX.v) / 2)
+      .addScaledVector(z, (minZ.v + maxZ.v) / 2);
+    const basis = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    return {
+      center: lower.worldToLocal(centerWorld),
+      quaternion: lower.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(basis),
+      radiusX: (maxX.v - minX.v) / 2 / scale,
+      radiusZ: (maxZ.v - minZ.v) / 2 / scale,
+      boneScale: scale,
+    };
+  }
   private gloves: THREE.Object3D[] = [];
   private gloveStyle: GloveLook | null = null;
 
@@ -140,9 +187,10 @@ export class FighterRig {
     this.gloveStyle = gloveLook(oz);
     if (!this.gloveStyle) return;
     for (const side of ["l", "r"] as const) {
-      const glove = makeGlove(this.fistShape[side], this.gloveStyle, team);
-      this.bone(`hand_${side}`).add(glove);
-      this.gloves.push(glove);
+      const { hand, cuff } = makeGlove(this.fistShape[side], this.cuffShape[side], this.gloveStyle, team);
+      this.bone(`hand_${side}`).add(hand);
+      this.bone(`lowerarm_${side}`).add(cuff);
+      this.gloves.push(hand, cuff);
     }
   }
 

@@ -1,0 +1,36 @@
+{
+  "fighter_male": {
+    "file": "/models/fighter_male.glb",
+    "heightM": 1.7291,
+    "armSpanM": 1.8137,
+    "armLengthM": 0.7207,
+    "volumeL": {
+      "base": 63.119,
+      "light": 57.532,
+      "heavy": 69.022,
+      "muscular": 59.898
+    },
+    "morphs": [
+      "light",
+      "heavy",
+      "muscular"
+    ]
+  },
+  "fighter_female": {
+    "file": "/models/fighter_female.glb",
+    "heightM": 1.5912,
+    "armSpanM": 1.5293,
+    "armLengthM": 0.6108,
+    "volumeL": {
+      "base": 48.088,
+      "light": 40.741,
+      "heavy": 54.702,
+      "muscular": 46.965
+    },
+    "morphs": [
+      "light",
+      "heavy",
+      "muscular"
+    ]
+  }
+}

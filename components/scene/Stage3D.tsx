@@ -3,14 +3,16 @@
 // 선수 성별이 바뀌면 그 성별 캐릭터로 바꿔 세운다. 무대가 준비되면 onReady로 Stage를 넘겨준다.
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { Sex } from "@/lib/types";
-import { Stage, webglAvailable } from "./stage";
+import { MODEL_KEY, bodyShape } from "@/lib/motion/bodyShape";
+import type { Fighter } from "@/lib/types";
+import { MODELS, Stage, webglAvailable } from "./stage";
 
 const noSubscribe = () => () => {};
 
 interface Props {
-  sexA: Sex;
-  sexB: Sex;
+  /** 선수 A·B 정보. 성별로 캐릭터를 고르고, 키·체중·리치로 모양을 맞춘다 */
+  fighterA: Fighter;
+  fighterB: Fighter;
   /** 무대가 만들어지면 한 번 불린다 (동작 재생 등 다음 작업에서 사용) */
   onReady?: (stage: Stage) => void;
   className?: string;
@@ -20,7 +22,9 @@ type Status = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message
 
 const NO_WEBGL: Status = { kind: "error", message: "이 브라우저에서는 3D를 볼 수 없어요. 숫자 결과는 그대로 볼 수 있어요." };
 
-export default function Stage3D({ sexA, sexB, onReady, className }: Props) {
+export default function Stage3D({ fighterA, fighterB, onReady, className }: Props) {
+  const sexA = fighterA.sex;
+  const sexB = fighterB.sex;
   const mountRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<Stage | null>(null);
   const [loadStatus, setLoadStatus] = useState<Status>({ kind: "loading" });
@@ -65,6 +69,15 @@ export default function Stage3D({ sexA, sexB, onReady, className }: Props) {
       cancelled = true;
     };
   }, [stage, sexA, sexB]);
+
+  // 체형 맞추기 (키·체중·리치가 바뀔 때마다, 캐릭터가 다 선 뒤에)
+  useEffect(() => {
+    if (!stage || loadStatus.kind !== "ready") return;
+    for (const f of [fighterA, fighterB]) {
+      if (stage.getFighter(f.id)?.sex !== f.sex) continue;
+      stage.applyShape(f.id, bodyShape(f, MODELS[MODEL_KEY[f.sex]]));
+    }
+  }, [stage, loadStatus, fighterA, fighterB]);
 
   return (
     <div className={`relative overflow-hidden rounded-lg bg-[#1f2430] ${className ?? ""}`}>

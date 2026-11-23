@@ -6,12 +6,17 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import modelsJson from "@/public/models/models.json";
+import type { BodyShape, ModelsJson } from "@/lib/motion/bodyShape";
+
+/** 캐릭터 치수 (키·팔 길이·체형별 부피) */
+export const MODELS = modelsJson as ModelsJson;
 import type { FighterId, Sex } from "@/lib/types";
 
-/** 성별마다 쓰는 캐릭터 파일 (scripts/blender/make_fighters.py로 만듦) */
+/** 성별마다 쓰는 캐릭터 파일 (scripts/blender/make_fighters.py로 만듦, 치수는 models.json) */
 export const MODEL_FILES: Record<Sex, string> = {
-  male: "/models/fighter_male.glb",
-  female: "/models/fighter_female.glb",
+  male: MODELS.fighter_male.file,
+  female: MODELS.fighter_female.file,
 };
 
 /** 선수 표시 색 (발밑 고리) */
@@ -184,6 +189,26 @@ export class Stage {
 
   getFighter(id: FighterId): StageFighter | undefined {
     return this.fighters.get(id);
+  }
+
+  /**
+   * 선수 체형 적용 (PLAN 작업 9): 전체 크기, 모양 변형(마름·무거움·근육형) 섞기, 위팔 뼈 배율(리치).
+   * 모양 값은 lib/motion/bodyShape.ts가 계산한다.
+   */
+  applyShape(id: FighterId, shape: BodyShape) {
+    const f = this.fighters.get(id);
+    if (!f) return;
+    f.model.scale.setScalar(shape.scale);
+    for (const mesh of f.meshes) {
+      const dict = mesh.morphTargetDictionary;
+      const influences = mesh.morphTargetInfluences;
+      if (!dict || !influences) continue;
+      for (const [name, amount] of Object.entries(shape.morph)) {
+        const index = dict[name];
+        if (index !== undefined) influences[index] = amount;
+      }
+    }
+    for (const name of ["upperarm_l", "upperarm_r"]) f.bones.get(name)?.scale.setScalar(shape.armScale);
   }
 
   /** 두 선수 사이 거리(m, 발 가운데끼리) */

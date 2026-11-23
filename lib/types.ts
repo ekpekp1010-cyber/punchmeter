@@ -12,6 +12,9 @@ export type FighterId = "A" | "B";
 /** 글러브 무게(oz). 0은 맨손, 4는 MMA 글러브 */
 export type GloveOz = 0 | 4 | 8 | 10 | 12 | 14 | 16;
 
+/** 성별. 분절 체중 비율표(de Leva 1996)가 남녀로 나뉘어 있어서 받는다 */
+export type Sex = "male" | "female";
+
 /** 맞은 신체 부위 */
 export type BodyPart = "head" | "torso" | "leg";
 
@@ -42,6 +45,8 @@ export interface Area {
  */
 export interface Fighter {
   id: FighterId;
+  /** 성별. 분절 체중 비율표의 남녀 값 중 어느 쪽을 쓸지 정한다 */
+  sex: Sex;
   /** 계체량 몸무게(kg). 40~150만 받는다 */
   weighInKg: number;
   /** 키(cm). 화면 거리를 cm로 바꾸는 크기 기준 */

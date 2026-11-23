@@ -8,7 +8,6 @@ import {
   colorStep,
   directionAngleDeg,
   effectiveMassKg,
-  errorPctFor,
   gloveForceFactor,
   gloveMassKg,
   headAccelToForceN,
@@ -24,10 +23,9 @@ import {
   regainKg,
   segmentLengthM,
   segmentMassKg,
-  squaredErrorPct,
   velocity,
-  withErrorDeg,
 } from "./index";
+import { PART_THRESHOLD_PLAN } from "../reference";
 
 describe("몸무게", () => {
   it("계체량 70kg이면 리게인 75.25kg", () => {
@@ -67,26 +65,6 @@ describe("속도와 각도", () => {
     expect(isPlausibleSpeed(25)).toBe(false);
     expect(isPlausibleSpeed(0.3)).toBe(false);
     expect(isPlausibleSpeed(10)).toBe(true);
-  });
-});
-
-describe("오차 범위", () => {
-  it("정밀 모드 속도·충격력·지수는 ±7%, 일반 모드는 ±15%", () => {
-    expect(errorPctFor("speed", "precise")).toBe(7);
-    expect(errorPctFor("force", "precise")).toBe(7);
-    expect(errorPctFor("intensity", "precise")).toBe(7);
-    expect(errorPctFor("speed", "general")).toBe(15);
-  });
-
-  it("운동에너지는 속도 오차의 약 2배 (정밀 14.5%, 일반 32.3%)", () => {
-    expect(squaredErrorPct(7)).toBe(14.5);
-    expect(squaredErrorPct(15)).toBe(32.3);
-    expect(errorPctFor("energy", "general")).toBe(32.3);
-  });
-
-  it("각도 오차는 정밀 ±5°, 일반 ±10°", () => {
-    expect(withErrorDeg(30, "precise").errorDeg).toBe(5);
-    expect(withErrorDeg(30, "general").errorDeg).toBe(10);
   });
 });
 
@@ -192,10 +170,24 @@ describe("한계 힘 환산", () => {
     expect(t.estimated).toBe(false);
   });
 
-  it("아래팔·몸통 앞·머리는 환산·빌린 값이라 추정 표시", () => {
+  it("아래팔·명치·턱은 환산·빌린 값이라 추정 표시", () => {
     expect(partThreshold("forearmRight", "male", 174.1).estimated).toBe(true);
-    expect(partThreshold("torsoFront", "female", 165).estimated).toBe(true);
-    expect(partThreshold("head", "male", 180).estimated).toBe(true);
+    expect(partThreshold("solarPlexus", "female", 165).estimated).toBe(true);
+    expect(partThreshold("jaw", "male", 180).estimated).toBe(true);
+  });
+
+  it("부위 22곳 모두 한계 힘 기준이 있다 (빠진 부위 없음)", () => {
+    expect(Object.keys(PART_THRESHOLD_PLAN)).toHaveLength(22);
+  });
+
+  it("간은 옆 복부 연구값(6730N)이 이미 힘이라 추정 표시가 없다", () => {
+    const t = partThreshold("liver", "male", 175);
+    expect(t.forceN).toBe(6730);
+    expect(t.estimated).toBe(false);
+  });
+
+  it("종아리와 정강이는 같은 정강이뼈 기준이라 한계 힘이 같다", () => {
+    expect(partThreshold("calfLeft", "male", 175).forceN).toBe(partThreshold("shinLeft", "male", 175).forceN);
   });
 
   it("여성 위팔(128 N·m)은 남성(257 N·m)보다 한계 힘이 낮다", () => {

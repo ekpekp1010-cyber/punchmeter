@@ -318,7 +318,10 @@ export const LIMB_TOLERANCE: ThresholdEntry[] = [
 ];
 
 /**
- * 부위 12곳의 한계 힘을 무엇으로 정할지 (PLAN 작업 3·14에서 이 표대로 계산한다).
+ * 부위 22곳의 한계 힘을 무엇으로 정할지 (PLAN 작업 7에서 이 표대로 계산한다).
+ * 작업 2에서 12곳 → 22곳으로 나누면서, 새로 생긴 부위는 우선 이미 확인한 기준을 그대로 이어 쓴다
+ * (머리 7곳 = 뇌진탕 기준, 명치·복부 = 정면 자료 없어 빌림, 종아리·정강이 = 정강이뼈 기준).
+ * 부위별로 더 맞는 연구값은 PLAN 작업 4(연구값 보강)에서 찾는다.
  * - force: 연구값이 이미 힘(N)
  * - moment: 굽힘 모멘트를 힘으로 환산 (MOMENT_TO_FORCE_NOTE)
  * - headAccel: 뇌진탕 50% 위험 가속도 × HEAD_EFFECTIVE_MASS_KG
@@ -375,19 +378,41 @@ const LOWER_LEG_PLAN: PartThresholdPlan = {
   sourceIds: ["nyquist1985"],
 };
 
+const LIVER_PLAN: PartThresholdPlan = {
+  method: "force",
+  value: { male: 6730, female: 6730 },
+  basis: "옆 복부(간·비장 포함) 6730 N",
+  sourceIds: ["yoganandan2007"],
+};
+const FRONT_TORSO_PLAN: PartThresholdPlan = {
+  ...FLANK_PLAN,
+  method: "borrowed",
+  basis: "정면 자료 없음 → 옆 가슴 5480 N을 빌려 씀",
+};
+
 export const PART_THRESHOLD_PLAN: Record<BodyPart, PartThresholdPlan> = {
-  head: HEAD_PLAN,
-  torsoFront: { ...FLANK_PLAN, method: "borrowed", basis: "정면 자료 없음 → 옆 가슴 5480 N을 빌려 씀" },
-  flankLeft: FLANK_PLAN,
-  flankRight: FLANK_PLAN,
+  jaw: HEAD_PLAN,
+  nose: HEAD_PLAN,
+  cheekLeft: HEAD_PLAN,
+  cheekRight: HEAD_PLAN,
+  forehead: HEAD_PLAN,
+  templeLeft: HEAD_PLAN,
+  templeRight: HEAD_PLAN,
+  solarPlexus: FRONT_TORSO_PLAN,
+  ribsLeft: FLANK_PLAN,
+  ribsRight: FLANK_PLAN,
+  liver: LIVER_PLAN,
+  abdomen: FRONT_TORSO_PLAN,
   upperArmLeft: UPPER_ARM_PLAN,
   upperArmRight: UPPER_ARM_PLAN,
   forearmLeft: FOREARM_PLAN,
   forearmRight: FOREARM_PLAN,
   thighLeft: THIGH_PLAN,
   thighRight: THIGH_PLAN,
-  lowerLegLeft: LOWER_LEG_PLAN,
-  lowerLegRight: LOWER_LEG_PLAN,
+  calfLeft: { ...LOWER_LEG_PLAN, basis: `${LOWER_LEG_PLAN.basis} (종아리 근육 단독 기준 없음 → 정강이뼈 기준을 씀)` },
+  calfRight: { ...LOWER_LEG_PLAN, basis: `${LOWER_LEG_PLAN.basis} (종아리 근육 단독 기준 없음 → 정강이뼈 기준을 씀)` },
+  shinLeft: LOWER_LEG_PLAN,
+  shinRight: LOWER_LEG_PLAN,
 };
 
 /** 자료를 찾지 못했거나 확인하지 못한 항목 */

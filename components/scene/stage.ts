@@ -9,9 +9,10 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import modelsJson from "@/public/models/models.json";
 import { MODEL_KEY, type BodyShape, type ModelsJson } from "@/lib/motion/bodyShape";
 import { smoothStep } from "@/lib/motion/path";
-import type { BodyPart, FighterId, PartLoad, Sex } from "@/lib/types";
+import type { BodyPart, FighterId, JointLockId, PartLoad, Sex } from "@/lib/types";
 import { colorOfStep } from "./loadColors";
 import { ArrowLayer } from "./arrows";
+import { JointArrow, poseJointLock } from "./jointLockPose";
 import { FighterRig } from "./fighterRig";
 import { poseAttacker, poseDefenderFor, prepareStrike, type ActiveStrike, type StrikeRequest } from "./strikePlayer";
 
@@ -80,6 +81,10 @@ export class Stage {
   private readonly resizeObserver: ResizeObserver;
   private readonly rigs = new Map<FighterId, FighterRig>();
   private readonly arrows: ArrowLayer;
+  private readonly jointArrow: JointArrow;
+  /** 관절기 보기 상태 (PLAN 작업 19) */
+  private jointLock: { attacker: FighterId; lock: JointLockId; angleDeg: number; over: boolean } | null = null;
+  private jointArrowFor: object | null = null;
   private strike: ActiveStrike | null = null;
   private events: PlaybackEvents = {};
   /** 차례로 재생할 타격들 (단타는 하나) */
@@ -116,6 +121,7 @@ export class Stage {
 
     this.buildEnvironment();
     this.arrows = new ArrowLayer(this.scene);
+    this.jointArrow = new JointArrow(this.scene);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
@@ -216,7 +222,7 @@ export class Stage {
       // 발밑 고리와, 선수마다 복사한 캐릭터 모양·재질을 메모리에서 지운다 (그림·텍스처 원본은 다른 선수와 함께 쓰므로 두고)
       if (mesh.isMesh) {
         mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose();
       }
     });
     this.fighters.delete(f.id);
@@ -224,6 +230,21 @@ export class Stage {
 
   getFighter(id: FighterId): StageFighter | undefined {
     return this.fighters.get(id);
+  }
+
+  /**
+   * 관절기 보기 (PLAN 작업 19). 당하는 선수의 팔다리를 그 관절기 자세로 놓고 각도만큼 꺾는다.
+   * over = 정상 범위를 넘었는가 (회전 화살표 색). null이면 끈다. 재생을 시작하면 자동으로 꺼진다.
+   */
+  showJointLock(lock: { attacker: FighterId; lock: JointLockId; angleDeg: number; over: boolean } | null) {
+    this.jointLock = lock;
+    if (lock) {
+      this.strike = null;
+      this.queue = [];
+      this.setDistance(1.3);
+    } else {
+      this.jointArrow.clear();
+    }
   }
 
   /** 부위별 누적 충격 색 칠하기 (PLAN 작업 18). 계산은 lib/lab/accumulate.ts가 한다 */
@@ -302,6 +323,8 @@ export class Stage {
     this.queueIndex = 0;
     this.paused = false;
     this.arrows.clear();
+    this.jointLock = null;
+    this.jointArrow.clear();
     this.strike = reqs.length > 0 ? this.prepare(reqs[0]) : null;
     if (this.strike) this.events.onStart?.(this.strike, 0);
     return this.strike;
@@ -363,6 +386,13 @@ export class Stage {
       } else if (s) {
         // 재생 중 맞는 선수: 수비에 맞춘 자세 (맞음 = 가드 내림, 막음 = 아래팔·정강이로 막기)
         poseDefenderFor(s.request, rig);
+      } else if (this.jointLock && this.jointLock.attacker !== id) {
+        // 관절기를 당하는 선수 (PLAN 작업 19)
+        const arc = poseJointLock(rig, this.jointLock.lock, this.jointLock.angleDeg);
+        if (this.jointArrowFor !== this.jointLock) {
+          this.jointArrow.show(arc, 0.14 * rig.scale, this.jointLock.over); // 설정이 바뀔 때만 다시 그린다
+          this.jointArrowFor = this.jointLock;
+        }
       } else {
         rig.setTwist(0);
         rig.guard();

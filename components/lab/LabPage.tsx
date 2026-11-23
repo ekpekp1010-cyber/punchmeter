@@ -7,13 +7,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ComboList from "@/components/lab/ComboList";
 import FighterForm from "@/components/lab/FighterForm";
+import JointLockPanel, { type JointLockDraft } from "@/components/lab/JointLockPanel";
 import Legend from "@/components/lab/Legend";
 import ResultPanel from "@/components/lab/ResultPanel";
 import StrikePicker, { PLAYABLE, checkSpeed, type StrikeDraft } from "@/components/lab/StrikePicker";
 import PlaybackBar, { type Rate } from "@/components/scene/PlaybackBar";
 import Stage3D from "@/components/scene/Stage3D";
 import type { Stage } from "@/components/scene/stage";
-import { accumulateLoads, buildStrikeResult } from "@/lib/lab";
+import { accumulateLoads, buildStrikeResult, judgeJointLock } from "@/lib/lab";
 import { checkFighter, toDraft, type FighterCheck, type FighterDraft } from "@/lib/lab/fighterInput";
 import type { Fighter, FighterId, PartLoad, StrikeResult, StrikeStep } from "@/lib/types";
 
@@ -127,6 +128,7 @@ export default function LabPage() {
     setSelected(0);
     setPlayback({ ...IDLE, playing: true, current: 0 });
     setHasPlayed(true);
+    setLockDraft((d) => ({ ...d, open: false }));
     setPlayedFighters(fighters);
     stage.playSequence(
       steps.map((st) => ({ attacker: st.attacker, technique: st.technique, side: st.side, target: st.target, speedMps: st.speedMps, defense: st.defense })),
@@ -168,6 +170,22 @@ export default function LabPage() {
     stage.setPartLoads("B", loads.B);
   }, [loads]);
 
+  // 관절기 (PLAN 작업 19): 판단은 lib/lab/jointLock.ts, 3D는 "3D로 보기"를 켰을 때만
+  const [lockDraft, setLockDraft] = useState<JointLockDraft>({ open: false, attacker: "A", lock: "armbar", angleDeg: 20 });
+  const lockJudgment = useMemo(() => {
+    const defender = state[lockDraft.attacker === "A" ? "B" : "A"].lastValid;
+    return judgeJointLock(lockDraft.attacker, lockDraft.lock, lockDraft.angleDeg, defender);
+  }, [lockDraft, state]);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.showJointLock(
+      lockDraft.open
+        ? { attacker: lockDraft.attacker, lock: lockDraft.lock, angleDeg: lockDraft.angleDeg, over: lockJudgment.overNormalDeg > 0 }
+        : null,
+    );
+  }, [lockDraft, lockJudgment]);
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800 px-5 py-3">
@@ -185,6 +203,7 @@ export default function LabPage() {
             />
           ))}
           <StrikePicker draft={strike} onChange={setStrike} />
+          <JointLockPanel draft={lockDraft} judgment={lockJudgment} onChange={setLockDraft} />
           <ComboList steps={combo} onChange={setCombo} onAdd={() => currentStep && setCombo((c) => [...c, currentStep])} canAdd={currentStep !== null} current={playback.current} />
           {!allValid && (
             <p className="rounded border border-amber-700 bg-amber-950/40 p-2 text-xs text-amber-300" role="status">

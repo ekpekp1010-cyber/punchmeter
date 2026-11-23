@@ -233,6 +233,16 @@ export class FighterRig {
     bone.updateMatrixWorld(true);
   }
 
+  /** 이름으로 뼈를 돌려 자식 뼈가 point를 향하게 한다 (관절기 자세용) */
+  aimBone(boneName: string, childName: string, point: THREE.Vector3) {
+    this.aim(this.bone(boneName), this.bone(childName), point);
+  }
+
+  /** 이름으로 뼈를 월드 축 둘레로 돌린다 (관절기 자세용) */
+  rotateBone(boneName: string, axis: THREE.Vector3, angleRad: number) {
+    this.rotateWorld(this.bone(boneName), axis, angleRad);
+  }
+
   /** 팔 길이(월드): 위팔, 아래팔, 손목~주먹 마디 */
   armLengths(side: ArmSide) {
     const s = this.pos(`upperarm_${side}`);

@@ -28,17 +28,21 @@ export const MAX_POSES = 3;
  */
 export const MIN_POSE_CONFIDENCE = 0.4;
 
+/** MediaPipe WASM 파일 묶음 (FilesetResolver가 만들어 주는 것과 같은 모양) */
+export type VisionFileset = Parameters<typeof PoseLandmarker.createFromOptions>[0];
+
 /**
  * 영상용 관절 찾기 도구를 만든다.
  * 그래픽 카드(GPU)로 먼저 시도하고, 안 되면 CPU로 다시 만든다.
+ * @param fileset 생략하면 화면(메인) 쪽 방식으로 WASM을 불러온다. 분석 작업자(Web Worker)는 직접 불러와 넘긴다.
  */
-export async function createVideoPoseLandmarker(): Promise<{
+export async function createVideoPoseLandmarker(fileset?: VisionFileset): Promise<{
   landmarker: PoseLandmarker;
   delegate: "GPU" | "CPU";
 }> {
-  const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_PATH);
+  const files = fileset ?? (await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_PATH));
   const make = (delegate: "GPU" | "CPU") =>
-    PoseLandmarker.createFromOptions(fileset, {
+    PoseLandmarker.createFromOptions(files, {
       baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
       runningMode: "VIDEO",
       numPoses: MAX_POSES,

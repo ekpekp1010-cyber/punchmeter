@@ -5,11 +5,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { LANDMARK as L } from "@/lib/engine/landmarks";
+import type { CameraPoint } from "@/lib/engine/cameraModel";
 import type { BodyPart, PoseLandmark } from "@/lib/types";
 import { PREDICTED_OPACITY, type FigureOptions } from "./bodyFigure";
 
 type Landmark = PoseLandmark;
-type NormalizedLandmark = PoseLandmark;
 
 /** 3D 장면에 세울 선수 한 명 (선수 추적기 결과) */
 export interface ScenePerson {
@@ -19,6 +19,8 @@ export interface ScenePerson {
   world: PoseLandmark[];
   /** 이번 장면에서 못 찾아 예측으로 보여 주는 중 */
   predicted: boolean;
+  /** 카메라 기준 위치로 옮길 거리 (m, 원근 반영). 없으면 정면 4 m에 세운다 */
+  camera?: CameraPoint;
 }
 
 /** 관절 하나, 또는 두 관절의 가운데 */
@@ -203,17 +205,8 @@ class Mannequin {
   }
 }
 
-/** 화면 속 몸통 길이와 실제 몸통 길이로 "화면 1칸 = 몇 m"를 어림한다 (두 사람 사이 거리 배치용) */
-function metersPerScreenUnit(world: Landmark[], image: NormalizedLandmark[], aspect: number): number | null {
-  const mid = <T extends { x: number; y: number; z: number }>(a: T, b: T) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 });
-  const ws = mid(world[L.leftShoulder], world[L.rightShoulder]);
-  const wh = mid(world[L.leftHip], world[L.rightHip]);
-  const is = mid(image[L.leftShoulder], image[L.rightShoulder]);
-  const ih = mid(image[L.leftHip], image[L.rightHip]);
-  const worldLen = Math.hypot(ws.x - wh.x, ws.y - wh.y, ws.z - wh.z);
-  const imageLen = Math.hypot((is.x - ih.x) * aspect, is.y - ih.y);
-  return imageLen > 1e-3 ? worldLen / imageLen : null;
-}
+/** 선수 위치를 아직 모를 때 쓰는 카메라까지 거리 (m) */
+const DEFAULT_DEPTH_M = 4;
 
 /** 분석 시뮬레이션 칸의 3D 장면 (최대 2명) */
 export class Figure3DScene {
@@ -245,6 +238,10 @@ export class Figure3DScene {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.addEventListener("change", () => this.render());
+    // 사용자가 직접 돌리면 그 시점을 유지한다 (선수를 따라 회전 중심을 옮기지 않음)
+    this.controls.addEventListener("start", () => {
+      this.userMoved = true;
+    });
     this.resetView();
 
     // 칸 크기가 바뀌면(창 크기, 보기 방식 전환) 그림 크기도 맞춘다
@@ -253,42 +250,69 @@ export class Figure3DScene {
     this.resize();
   }
 
-  /** 정면에서 보는 처음 시점으로 되돌린다 */
+  private userMoved = false;
+  /** 두 선수 가운데 (three.js 좌표) */
+  private center = new THREE.Vector3(0, 0, -DEFAULT_DEPTH_M);
+
+  /** 촬영 카메라의 세로 화각을 맞춘다 (35mm 환산 초점거리에서 구한 값) */
+  setVerticalFov(fovDeg: number) {
+    this.camera.fov = fovDeg;
+    this.camera.updateProjectionMatrix();
+    this.render();
+  }
+
+  /**
+   * 원본 영상을 찍은 카메라 자리에서 보는 시점으로 되돌린다.
+   * 카메라는 원점에서 정면(-z)을 보고, 회전 중심은 선수들이 있는 깊이에 둔다.
+   */
   resetView() {
-    this.camera.position.set(0, 0.2, 3.3);
-    this.controls.target.set(0, 0, 0);
+    this.userMoved = false;
+    this.camera.position.set(0, 0, 0);
+    this.controls.target.set(0, 0, this.center.z);
+    this.controls.update();
+    this.render();
+  }
+
+  /** 두 선수를 옆에서 보는 시점 (앞뒤 거리·원근이 잘 보인다) */
+  sideView() {
+    this.userMoved = true;
+    const distance = Math.max(3, -this.center.z);
+    this.controls.target.copy(this.center);
+    this.camera.position.set(this.center.x + distance, this.center.y + 0.8, this.center.z);
     this.controls.update();
     this.render();
   }
 
   /**
    * 찾은 사람들로 모델을 움직인다.
-   * 두 사람의 3D 위치는 각자 엉덩이 기준이라, 영상 속 위치를 보고 좌우·위아래 간격을 어림해 벌려 놓는다 (앞뒤 거리는 알 수 없어 같은 줄에 둔다).
+   * 선수마다 원근(멀리 있으면 작게 보임)으로 구한 카메라까지 거리에 세워, 앞뒤 거리까지 영상과 맞게 배치한다.
    */
-  update(people: ScenePerson[], aspect: number, options: FigureOptions = {}) {
-    // 거리 어림은 이번 장면에서 실제로 찾은 선수 기준 (예측 중인 선수는 빼고, 없으면 모두 사용)
-    const basis = people.some((p) => !p.predicted) ? people.filter((p) => !p.predicted) : people;
-    const scales = basis
-      .map((p) => metersPerScreenUnit(p.world, p.image, aspect))
-      .filter((s): s is number => s !== null);
-    const mpu = scales.length ? scales.reduce((a, b) => a + b, 0) / scales.length : 1;
-
+  update(people: ScenePerson[], options: FigureOptions = {}) {
     let minY = Infinity;
+    const placed: THREE.Vector3[] = [];
     this.people.forEach((mannequin, slot) => {
       const person = people.find((p) => p.slot === slot);
       if (!person) {
         mannequin.hide();
         return;
       }
-      const img = person.image;
-      const hipX = (img[L.leftHip].x + img[L.rightHip].x) / 2;
-      const hipY = (img[L.leftHip].y + img[L.rightHip].y) / 2;
-      const offset = new THREE.Vector3((hipX - 0.5) * aspect * mpu, -(hipY - 0.5) * mpu, 0);
+      // 카메라 공간(MediaPipe 방향: y 아래, z 멀어짐) → three.js(y 위, z 보는 사람 쪽)
+      const cam = person.camera ?? { x: 0, y: 0, z: DEFAULT_DEPTH_M };
+      const offset = new THREE.Vector3(cam.x, -cam.y, -cam.z);
+      placed.push(offset);
       // 예측으로 보여 주는 선수는 흐리게
       const opacity = (options.opacity ?? 1) * (person.predicted ? PREDICTED_OPACITY : 1);
       minY = Math.min(minY, mannequin.update(person.world, offset, { ...options, opacity }));
     });
-    if (Number.isFinite(minY)) this.grid.position.y = minY;
+    if (placed.length > 0) {
+      this.center = placed.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / placed.length);
+      this.grid.position.set(this.center.x, Number.isFinite(minY) ? minY : this.grid.position.y, this.center.z);
+      // 사용자가 돌리지 않았으면 영상 시점을 유지한 채 회전 중심만 선수 깊이로 맞춘다
+      if (!this.userMoved) {
+        this.controls.target.set(0, 0, this.center.z);
+        this.controls.update();
+      }
+    }
     this.render();
   }
 

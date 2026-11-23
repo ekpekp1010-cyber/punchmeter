@@ -56,18 +56,35 @@ describe("장면 사이 채우기", () => {
     expect(mid.find((p) => p.slot === 1)!.image[0].x).toBeCloseTo(0.825, 10);
   });
 
-  it("장면 한 칸만큼 늦게 따라가다가 다음 장면이 올 때쯤 최근 장면에 도착한다", () => {
+  it("분석 결과가 들쭉날쭉 도착해도 그리기 시계는 끊기지 않고 고르게 흐른다", () => {
+    const tl = new PoseTimeline();
+    // 0.25배속 30fps: 장면은 실제 133ms마다 오지만, 도착 시각이 ±40ms씩 흔들린다
+    const jitter = [0, 35, -40, 20, -10, 40, -35, 5, 30, -20, 0, 25, -30, 10, -5, 40, -40, 15, 0, -25];
+    let wall = 0;
+    let next = 0;
+    let prevT: number | null = null;
+    const steps: number[] = [];
+    for (let k = 0; k < jitter.length; k++) {
+      const arrival = k * 133 + jitter[k];
+      // 모니터 새로고침(16ms)마다 그린다
+      for (; wall < arrival; wall += 16) {
+        const t = tl.displayTime(wall, 0.25, false);
+        if (t !== null && prevT !== null && k > 4) steps.push(t - prevT);
+        if (t !== null) prevT = t;
+      }
+      tl.push(next * FRAME, [personAt(0.2 + next * 0.01)], arrival);
+      next += 1;
+    }
+    // 뒤로 가지 않고, 한 번에 크게 뛰지 않는다 (고른 흐름 1칸 = 16ms × 0.25배속 = 0.004초)
+    expect(Math.min(...steps)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...steps)).toBeLessThan(0.004 * 3);
+  });
+
+  it("그리기 시계는 최근 장면을 넘어가지 않고, 멈추면 최근 장면을 보여 준다", () => {
     const tl = new PoseTimeline();
     tl.push(0, [personAt(0.2)], 0);
     tl.push(FRAME, [personAt(0.4)], 100);
-    // 최근 장면 직후: 앞 장면 위치에서 시작
-    expect(tl.displayTime(100, 1, false)).toBeCloseTo(0, 10);
-    // 반 칸 지난 뒤 (1배속): 가운데
-    const t = tl.displayTime(100 + (FRAME / 2) * 1000, 1, false)!;
-    expect(tl.sampleAt(t)[0].image[0].x).toBeCloseTo(0.3, 6);
-    // 오래 지나도 최근 장면을 넘어가지 않는다
-    expect(tl.displayTime(100000, 1, false)).toBeCloseTo(FRAME, 10);
-    // 멈춰 있으면 최근 장면
+    expect(tl.displayTime(100000, 1, false)!).toBeLessThanOrEqual(FRAME);
     expect(tl.displayTime(100, 1, true)).toBeCloseTo(FRAME, 10);
   });
 

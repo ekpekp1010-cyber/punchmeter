@@ -178,8 +178,24 @@ function poseBody(rig: FighterRig, technique: TechniqueId, sign: number, u: numb
   else rig.plantFeet();
 }
 
+/**
+ * 차는 다리가 서는 자세에서 떠나고 돌아오는 구간 (경로 진행 정도 u, 그림용).
+ * 이 구간에서는 다리를 서는 자세와 섞어, 차기 시작 때 발바닥이 바닥에서 떨어지고
+ * 차고 돌아왔을 때 발바닥이 제자리 바닥에 평평하게 닿게 한다 (닿는 순간 u = 1에는 영향 없음).
+ */
+const LEG_LAND_U = 0.35;
+
 /** 끝점을 목표에 놓는 팔다리 자세 (몸통 자세 뒤에 부른다). 닿았는지 돌려준다 */
 function poseLimb(rig: FighterRig, technique: TechniqueId, side: ArmSide, goal: THREE.Vector3, u: number): boolean {
+  const reached = poseLimbRaw(rig, technique, side, goal, u);
+  if (["shin", "foot", "knee"].includes(SPEC[technique].effector)) {
+    if (u < LEG_LAND_U) rig.blendLegToStance(side, smoothStep(u / LEG_LAND_U));
+    rig.keepToeAboveGround(side);
+  }
+  return reached;
+}
+
+function poseLimbRaw(rig: FighterRig, technique: TechniqueId, side: ArmSide, goal: THREE.Vector3, u: number): boolean {
   const effector = SPEC[technique].effector;
   switch (effector) {
     case "fist":

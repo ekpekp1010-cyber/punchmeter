@@ -571,6 +571,33 @@ export class FighterRig {
     return r.reached;
   }
 
+  /**
+   * 다리를 서는 자세 쪽으로 섞는다 (w = 0이면 서는 자세 그대로, 1이면 지금 자세 그대로).
+   * 차기 처음·끝 구간에 써서, 차고 돌아왔을 때 발바닥이 제자리 바닥에 평평하게 닿게 한다.
+   */
+  blendLegToStance(side: ArmSide, w: number) {
+    if (w >= 1) return;
+    const bones = ["thigh", "calf", "foot"].map((n) => this.bone(`${n}_${side}`));
+    const now = bones.map((b) => b.quaternion.clone());
+    this.plantFeet(side === "l" ? "r" : "l"); // 이 다리만 서는 자세로
+    bones.forEach((b, i) => b.quaternion.slerp(now[i], Math.max(0, w)));
+    this.fighter.model.updateMatrixWorld(true);
+  }
+
+  /** 발끝(발볼)이 바닥 아래로 들어가면 발목을 굽혀 바닥 위로 올린다 (차는 다리가 바닥 가까이 지날 때) */
+  keepToeAboveGround(side: ArmSide, minY = 0.005) {
+    const ankle = this.pos(`foot_${side}`);
+    const ball = this.pos(`ball_${side}`);
+    if (ball.y >= minY || ankle.y <= minY) return;
+    const len = ball.distanceTo(ankle);
+    const flat = Math.hypot(ball.x - ankle.x, ball.z - ankle.z);
+    const dy = minY - ankle.y; // 발목에서 바닥선까지 (음수)
+    const horiz = Math.sqrt(Math.max(0, len * len - dy * dy));
+    const k = flat > 1e-6 ? horiz / flat : 0;
+    const goal = new THREE.Vector3(ankle.x + (ball.x - ankle.x) * k, minY, ankle.z + (ball.z - ankle.z) * k);
+    this.aim(this.bone(`foot_${side}`), this.bone(`ball_${side}`), goal);
+  }
+
   /** 무릎 치기: 넓적다리를 target 쪽으로, 정강이는 뒤아래로 접는다 */
   reachKnee(side: ArmSide, target: THREE.Vector3): boolean {
     const { thigh, shank } = this.legLengths(side);

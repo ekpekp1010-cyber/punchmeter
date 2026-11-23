@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 내려받은 도구 파일 (MPFB2 확장 기능·자산 팩 zip). 크기가 커서 Git에 올리지 않는다
+/.downloads/

@@ -105,6 +105,8 @@ export class Stage {
   private distanceMove: { from: number; to: number } | null = null;
   /** 두 선수 가드를 좁히는 정도 (마지막 타격에서 정한 값, 0~1) */
   private idleGuardTight = 0;
+  /** 평소 통통 튀기용 시계(초, 실제 시간) */
+  private idleClock = 0;
   /** 이번 타격이 시작될 때의 가드 좁히기 (여기서 이번 값으로 천천히 옮긴다) */
   private fromGuardTight = 0;
   /** 동작이 바뀔 때 이전 자세에서 새 자세로 섞기 (선수별 기억한 자세, 지난 시간) */
@@ -408,6 +410,7 @@ export class Stage {
    */
   private poseFighters(dt: number) {
     const step = this.paused ? 0 : dt * this.rate;
+    this.idleClock += dt;
     let s = this.strike;
     if (s) {
       const before = s.time;
@@ -464,6 +467,8 @@ export class Stage {
           this.jointArrowFor = this.jointLock;
         }
       } else {
+        // 평소: 제자리에서 아주 살짝 통통 튄다 (두 선수 박자를 조금 어긋나게). 재생 속도와 상관없이 실제 시간으로
+        rig.idleBounce(this.idleClock + (id === "B" ? 0.13 : 0));
         rig.setTwist(0);
         rig.guard();
       }

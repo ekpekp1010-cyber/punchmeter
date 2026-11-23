@@ -37,6 +37,19 @@ const STANCE = {
   toeYawDeg: { l: -15, r: -45 } as Record<"l" | "r", number>,
 };
 
+/**
+ * 평소(재생하지 않을 때) 제자리에서 아주 살짝 통통 튀기 — 그림용 값, 사용자 요청.
+ * 몸 높이 = |sin(π × hz × 시각)| × heightM: 바닥에 닿는 순간은 짧고 위에서는 천천히 (튀는 모양).
+ */
+const BOUNCE = {
+  /** 1초에 튀는 횟수 */
+  hz: 1.8,
+  /** 가장 높이 뜨는 높이(m, 기본 체형 기준) */
+  heightM: 0.012,
+  /** 뒤꿈치를 드는 정도 (몸이 뜨는 높이 대비) — 앞꿈치로 튄다 */
+  heelLift: 0.7,
+};
+
 /** 기본 자세에서 몸통(척추)을 골반보다 더 비트는 각도(°, 왼 어깨가 앞으로) — 그림용 */
 const STANCE_TWIST_DEG = -8;
 /** 목이 몸통 회전을 되돌리는 비율 (얼굴은 상대를 보게) */
@@ -383,6 +396,27 @@ export class FighterRig {
   setRise(m: number) {
     this.fighter.model.position.y = -this.stanceDrop + m;
     this.fighter.model.updateMatrixWorld(true);
+  }
+
+  /**
+   * 제자리에서 아주 살짝 통통 튄다 (평소 대기 자세, beginFrame 바로 뒤에 부른다). t = 시각(초).
+   * 몸을 들고 뒤꿈치를 들어 앞꿈치(발볼)는 제자리 바닥에 둔다. 계산 숫자와는 상관없다.
+   */
+  idleBounce(t: number) {
+    const h = Math.abs(Math.sin(Math.PI * BOUNCE.hz * t)) * BOUNCE.heightM * this.scale;
+    if (h <= 0) return;
+    // 서 있을 때의 발볼 자리 (beginFrame이 발을 평평하게 놓은 뒤)
+    const balls = { l: this.pos("ball_l"), r: this.pos("ball_r") };
+    this.setRise(h);
+    for (const side of ["l", "r"] as const) {
+      const toe = this.stanceToe(side);
+      const pole = this.hip(side).add(new THREE.Vector3(toe.x, 0, toe.z).normalize());
+      const ankle = this.stanceAnkle(side);
+      ankle.y += h * BOUNCE.heelLift;
+      this.reachLeg(side, ankle, pole, 1, toe);
+      // 발을 숙여 발볼이 원래 자리(바닥)를 향하게 — 뒤꿈치만 들린다
+      this.aim(this.bone(`foot_${side}`), this.bone(`ball_${side}`), balls[side]);
+    }
   }
 
   /** 지금 자세(뼈 회전 + 몸 높이)를 기억한다 — 동작이 바뀔 때 이전 자세에서 부드럽게 넘어가려고 */

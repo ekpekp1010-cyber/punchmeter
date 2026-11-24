@@ -81,11 +81,26 @@ function checkFighter(f: Fighter) {
   if (!isValidHeight(f.heightCm)) throw new StrikeInputError("키는 140~220cm 사이로 넣어 주세요");
 }
 
+/**
+ * 직접 넣는 속도(연구 속도 자료가 없는 기술)의 칸 범위(m/s) — 숫자 실수(예: 0.0001, 1e300)를 막기 위한 범위이며
+ * 계산 기준값이 아니다 (리치 칸 범위와 같은 성격, 보안 점검 2026-11-24). 너무 작으면 재생이 끝나지 않고, 너무 크면 결과가 ∞가 된다.
+ */
+export const USER_SPEED_MIN_MPS = 0.5;
+export const USER_SPEED_MAX_MPS = 30;
+
+/** 직접 넣는 속도가 칸 범위 안인지 */
+export function isValidUserSpeed(v: number): boolean {
+  return Number.isFinite(v) && v >= USER_SPEED_MIN_MPS && v <= USER_SPEED_MAX_MPS;
+}
+
 /** 속도: 연구 기본값·범위 또는 사용자 입력값 */
 function speedEstimate(step: StrikeStep, info: TechniqueInfo): Estimate {
   const v = step.speedMps;
   if (!Number.isFinite(v) || v <= 0) throw new StrikeInputError("속도는 0보다 큰 숫자로 넣어 주세요");
   if (step.speedBasis === "userInput") {
+    if (!isValidUserSpeed(v)) {
+      throw new StrikeInputError(`속도는 ${USER_SPEED_MIN_MPS}~${USER_SPEED_MAX_MPS} m/s 사이로 넣어 주세요`);
+    }
     return { value: v, basis: "userInput", sourceIds: [] };
   }
   if (!info.speed) {

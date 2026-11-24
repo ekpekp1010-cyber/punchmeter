@@ -102,6 +102,13 @@ describe("5. 속도 자료 없는 기술", () => {
     expect(r.force.weighIn.value).toBeGreaterThan(0);
   });
 
+  it("직접 넣는 속도는 칸 범위(0.5~30 m/s) 밖이면 받지 않는다 (재생이 끝나지 않거나 ∞가 되는 것 막기)", () => {
+    for (const v of [1e-320, 0.1, 31, 1e308]) {
+      expect(() => computeStrike(step({ technique: "elbow", speedMps: v, speedBasis: "userInput" }), fighter())).toThrow(/0.5~30/);
+    }
+    expect(computeStrike(step({ technique: "elbow", speedMps: 30, speedBasis: "userInput" }), fighter()).speed.value).toBe(30);
+  });
+
   it("연구 범위 밖의 속도는 받지 않는다 (잽 범위 5.05~6.21)", () => {
     expect(() => computeStrike(step({ technique: "jab", speedMps: 9 }), fighter())).toThrow(/연구 범위/);
   });

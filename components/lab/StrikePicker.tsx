@@ -6,6 +6,7 @@
 import { useId } from "react";
 import { BODY_PARTS, TECHNIQUES, bodyPartInfo, shortCite, sideCanTarget, techniqueInfo } from "@/lib/reference";
 import { MOVE_NAME_KO } from "@/lib/lab/combo";
+import { USER_SPEED_MAX_MPS, USER_SPEED_MIN_MPS, isValidUserSpeed } from "@/lib/lab/strike";
 import type { Defense, FighterId, MoveId, StrikeSide, TechniqueId } from "@/lib/types";
 
 /** 3D로 재생할 수 있는 기술 (PLAN 작업 11: 펀치, 작업 12: 킥·팔꿈치·무릎) */
@@ -52,6 +53,9 @@ export function checkSpeed(d: StrikeDraft): { speedMps: number | null; basis: "r
   if (info.speed) {
     const [lo, hi] = info.speed.rangeMps;
     if (n < lo || n > hi) return { speedMps: null, basis, error: `연구 범위(${lo}~${hi} m/s) 안에서 골라 주세요` };
+  } else if (!isValidUserSpeed(n)) {
+    // 직접 넣는 속도는 숫자 실수를 막는 칸 범위 안만 받는다 (계산 기준값 아님)
+    return { speedMps: null, basis, error: `속도는 ${USER_SPEED_MIN_MPS}~${USER_SPEED_MAX_MPS} m/s 사이로 넣어 주세요` };
   }
   return { speedMps: n, basis };
 }
@@ -188,7 +192,7 @@ export default function StrikePicker({ draft, onChange }: Props) {
               {info.speed.confidence === "low" && " (믿음 낮음)"}
             </>
           ) : (
-            <>자료 없음 — 직접 입력 · 넣은 값은 &ldquo;사용자 입력값&rdquo;으로 표시돼요</>
+            <>자료 없음 — 직접 입력 ({USER_SPEED_MIN_MPS}~{USER_SPEED_MAX_MPS} m/s, 숫자 실수 막기용 칸 범위) · 넣은 값은 &ldquo;사용자 입력값&rdquo;으로 표시돼요</>
           )}
         </p>
         {speed.error && <p className="pl-16 text-xs text-amber-400">{speed.error}</p>}

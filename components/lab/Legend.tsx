@@ -14,7 +14,7 @@ export default function Legend({ loads }: Props) {
     loads[id].filter((l) => l.accumulatedForceN > 0).map((l) => ({ id, l })),
   );
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3 text-xs" aria-label="누적 충격 색 범례">
+    <section className="flex flex-col gap-2 py-3 text-xs" aria-label="누적 충격 색 범례">
       <h2 className="text-sm font-semibold">누적 충격 색 (한계 힘 대비, 리게인 기준)</h2>
       <ul className="flex flex-wrap gap-x-3 gap-y-1">
         {([1, 2, 3, 4, 5] as const).map((s) => (

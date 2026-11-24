@@ -35,7 +35,7 @@ export default function ComboList({ steps, onChange, onAdd, canAdd, current }: P
     onChange(next);
   };
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3 text-sm" aria-label="연타">
+    <section className="flex flex-col gap-2 py-3 text-sm" aria-label="연타">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">연타</h2>
         <div className="flex gap-1">

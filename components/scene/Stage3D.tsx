@@ -16,13 +16,15 @@ interface Props {
   /** 무대가 만들어지면 한 번 불린다 (동작 재생 등 다음 작업에서 사용) */
   onReady?: (stage: Stage) => void;
   className?: string;
+  /** 테두리 없이 화면 가득 (선수 표시·시점 단추는 오른쪽 위에 모은다) */
+  frameless?: boolean;
 }
 
 type Status = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message: string };
 
 const NO_WEBGL: Status = { kind: "error", message: "이 브라우저에서는 3D를 볼 수 없어요. 숫자 결과는 그대로 볼 수 있어요." };
 
-export default function Stage3D({ fighterA, fighterB, onReady, className }: Props) {
+export default function Stage3D({ fighterA, fighterB, onReady, className, frameless = false }: Props) {
   const sexA = fighterA.sex;
   const sexB = fighterB.sex;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -81,13 +83,25 @@ export default function Stage3D({ fighterA, fighterB, onReady, className }: Prop
   }, [stage, loadStatus, fighterA, fighterB]);
 
   return (
-    <div className={`relative overflow-hidden rounded-lg border border-zinc-800 bg-[#161210] ${className ?? ""}`}>
+    // frameless면 자리(absolute 등)는 부모가 className으로 정한다 (relative를 같이 주면 높이가 0이 된다)
+    <div className={`overflow-hidden bg-[#161210] ${frameless ? "" : "relative rounded-lg border border-zinc-800"} ${className ?? ""}`}>
       <div ref={mountRef} className="absolute inset-0" />
-      <div className="pointer-events-none absolute left-3 top-3 flex gap-3 text-xs font-medium">
+      <div
+        className={`pointer-events-none absolute flex gap-2 text-xs font-medium ${frameless ? "right-3 top-14 z-[5] lg:top-3" : "left-3 top-3"}`}
+      >
         <span className="rounded bg-black/40 px-2 py-1 text-red-300">● 선수 A</span>
         <span className="rounded bg-black/40 px-2 py-1 text-blue-300">● 선수 B</span>
+        {frameless && stage && (
+          <button
+            type="button"
+            onClick={() => stage.resetView()}
+            className="pointer-events-auto rounded bg-black/40 px-2 py-1 text-xs text-zinc-200 hover:bg-black/60"
+          >
+            시점 처음으로
+          </button>
+        )}
       </div>
-      {stage && (
+      {!frameless && stage && (
         <button
           type="button"
           onClick={() => stage.resetView()}

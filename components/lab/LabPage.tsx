@@ -64,6 +64,34 @@ interface Playback {
   reached: boolean;
 }
 
+/** 휴대폰 서랍 탭 */
+type MobileTab = "fighters" | "strike" | "result" | "lock";
+const MOBILE_TABS: [MobileTab, string][] = [
+  ["fighters", "선수"],
+  ["strike", "기술 · 연타"],
+  ["result", "결과"],
+  ["lock", "관절기"],
+];
+
+/** 무대 위에 뜨는 반투명 막 (넓은 화면). 휴대폰에서는 무대 아래 보통 흐름으로 놓인다 */
+const OVERLAY_PANEL =
+  "px-4 lg:absolute lg:top-20 lg:bottom-28 lg:z-10 lg:overflow-y-auto lg:overscroll-contain lg:rounded-xl lg:border lg:border-zinc-700/50 lg:bg-zinc-950/60 lg:shadow-2xl lg:backdrop-blur-md";
+/** 접은 막을 다시 펴는 단추 (넓은 화면만) */
+const OVERLAY_TOGGLE =
+  "absolute top-20 z-10 hidden rounded-full border border-zinc-700/60 bg-zinc-950/70 px-3 py-1 text-xs text-zinc-200 backdrop-blur-md hover:bg-zinc-900 lg:block";
+
+/** 막 머리 (넓은 화면만): 이름 + 접기 */
+function OverlayHead({ title, onClose, side }: { title: string; onClose: () => void; side: "left" | "right" }) {
+  return (
+    <div className="sticky top-0 z-10 -mx-4 hidden items-center justify-between border-b border-zinc-800/70 bg-zinc-950/80 px-4 py-2 backdrop-blur lg:flex">
+      <span className="font-display text-xs uppercase tracking-[0.2em] text-zinc-400">{title}</span>
+      <button type="button" onClick={onClose} className="rounded px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
+        {side === "left" ? "◂ 접기" : "접기 ▸"}
+      </button>
+    </div>
+  );
+}
+
 /** 머리말 번호 캡션: 사용 순서 (제목, 설명) */
 const HEADER_STEPS: [string, string][] = [
   ["선수 정보", "몸무게 · 키 · 글러브"],
@@ -110,6 +138,10 @@ export default function LabPage() {
   const [results, setResults] = useState<StrikeResult[]>([]);
   const [selected, setSelected] = useState(0);
   const [hasPlayed, setHasPlayed] = useState(false);
+  /** 화면 배치: 휴대폰 서랍 탭, 넓은 화면의 왼쪽(입력)·오른쪽(결과) 막 펼침 */
+  const [mobileTab, setMobileTab] = useState<MobileTab>("strike");
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   /** 재생할 때의 선수 정보 (누적 계산은 이 값으로) */
   const [playedFighters, setPlayedFighters] = useState<Record<FighterId, Fighter> | null>(null);
   const stageRef = useRef<Stage | null>(null);
@@ -147,6 +179,8 @@ export default function LabPage() {
     setSelected(0);
     setPlayback({ ...IDLE, playing: true, current: 0 });
     setHasPlayed(true);
+    setMobileTab("result"); // 휴대폰: 재생하면 결과 탭으로
+    setRightOpen(true);
     setLockDraft((d) => ({ ...d, open: false }));
     setPlayedFighters(fighters);
     playedItemsRef.current = steps;
@@ -237,98 +271,153 @@ export default function LabPage() {
     }, 150);
   };
 
+  const statusText = playback.playing
+    ? playback.contactedAt === playback.current
+      ? playback.reached
+        ? "닿음 — 닿는 순간 끝점(주먹·발·무릎·팔꿈치) 속도가 정한 속도와 같아요"
+        : "노린 곳까지 다 닿지 못했어요 — 두 선수 키 차이가 커서 몸이 겹치지 않는 거리에서는 닿지 않아요 (숫자 계산에는 영향 없음)"
+      : `재생 중… ${steps.length > 1 ? `${playback.current + 1}/${steps.length}` : ""}`
+    : "마우스로 끌어 시점을 돌리고, 휠로 확대·축소해요.";
+  /** 휴대폰 서랍: 지금 탭이 아니면 숨기고, 넓은 화면(lg)에서는 늘 보인다 */
+  const inTab = (t: MobileTab) => (mobileTab === t ? "" : "hidden lg:block");
+
   return (
     <>
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 print:hidden">
-      {/* 머리말: Forge Gate 디자인의 넓은 제목 + 짧은 소개 + 번호 캡션 (가려진 틀에서 미끄러져 나옴) */}
-      <header className="relative overflow-hidden border-b border-zinc-800 px-5 pb-4 pt-6">
+    {/*
+      화면 구성 (사용자 요청 2026-11-24): 3D 무대를 화면 가득 두고, 정보는 그 위에 반투명 막으로 띄운다.
+      넓은 화면: 왼쪽 막 = 입력(선수·기술·연타·관절기), 오른쪽 막 = 결과(요약 → 펼치면 상세)·누적 색·내려받기,
+      아래 가운데 = 재생 조절, 맨 아래 = 01~04 순서 캡션. 막은 접을 수 있다.
+      휴대폰: 무대를 위에 두고 정보는 아래 서랍(탭)으로.
+    */}
+    <div className="relative bg-zinc-950 text-zinc-100 lg:h-svh lg:overflow-hidden print:hidden">
+      {/* 3D 무대 (휴대폰: 위쪽 / 넓은 화면: 화면 가득) */}
+      <div className="relative h-[56svh] min-h-[320px] lg:absolute lg:inset-0 lg:h-auto">
+        <Stage3D fighterA={state.A.lastValid} fighterB={state.B.lastValid} onReady={onStageReady} className="absolute inset-0" frameless />
+        {/* 은은한 구리 빛 + 위아래 어둡게 (글자가 잘 보이게) */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_140%_at_88%_0%,rgba(197,121,75,0.2),transparent_65%)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(45%_70%_at_50%_0%,rgba(197,121,75,0.14),transparent_70%),linear-gradient(to_bottom,rgba(18,17,16,0.7),transparent_18%,transparent_75%,rgba(18,17,16,0.75))]"
         />
-        <div className="relative flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        {/* 제목 (무대 왼쪽 위에 작게) */}
+        <header className="pointer-events-none absolute left-4 top-3 lg:left-6 lg:top-4">
           <h1>
             <span className="reveal">
-              <span className="font-display text-4xl font-semibold uppercase leading-none tracking-tight sm:text-6xl">PunchMeter</span>
+              <span className="font-display text-2xl font-semibold uppercase leading-none tracking-tight lg:text-3xl">PunchMeter</span>
             </span>
-            <span className="reveal mt-2">
-              <span className="text-sm text-zinc-300" style={{ "--delay": "180ms" } as React.CSSProperties}>
+            <span className="reveal mt-1">
+              <span className="text-xs text-zinc-300" style={{ "--delay": "150ms" } as React.CSSProperties}>
                 펀치미터 · 3D 타격 실험실
               </span>
             </span>
           </h1>
-          <p className="fade-in max-w-xs text-xs leading-relaxed text-zinc-300" style={{ "--delay": "350ms" } as React.CSSProperties}>
-            선수와 기술·부위·속도를 정하면 사람 같은 3D 캐릭터로 재생하고, 힘·에너지·의학적 판단을 연구 근거와 함께 보여 줘요.
+        </header>
+        {/* 재생 조절 + 상태 (넓은 화면: 아래 가운데에 떠 있음) */}
+        <div className="absolute inset-x-3 bottom-3 flex flex-col items-center gap-1 lg:inset-x-auto lg:bottom-14 lg:left-1/2 lg:-translate-x-1/2">
+          <div className="rounded-2xl border border-zinc-700/60 bg-zinc-950/70 px-3 py-1.5 backdrop-blur-md lg:rounded-full">
+            <PlaybackBar
+              rate={rate}
+              playing={playback.playing}
+              paused={playback.paused}
+              canPlay={canPlay}
+              canReplay={hasPlayed && !playback.playing}
+              onPlay={onPlay}
+              onPauseToggle={onPauseToggle}
+              onReplay={onReplay}
+              onRate={onRate}
+            />
+          </div>
+          <p className="max-w-xl rounded bg-zinc-950/50 px-2 text-center text-[11px] text-zinc-300" role="status">
+            {statusText}
           </p>
         </div>
-        <ol className="relative mt-5 grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="사용 순서">
+        {/* 01~04 순서 캡션 (넓은 화면: 맨 아래 가장자리에 얇게) */}
+        <ol className="pointer-events-none absolute inset-x-6 bottom-2 hidden justify-between lg:flex" aria-label="사용 순서">
           {HEADER_STEPS.map(([title, sub], i) => (
             <li key={title} className="reveal">
-              <span className="flex items-center gap-3" style={{ "--delay": `${300 + i * 90}ms` } as React.CSSProperties}>
-                <span className="font-display text-2xl font-light leading-none text-ember">{String(i + 1).padStart(2, "0")}</span>
-                <span className="border-l border-zinc-600 pl-3 text-xs leading-snug text-zinc-300">
-                  {title}
-                  <br />
-                  <span className="text-zinc-500">{sub}</span>
+              <span className="flex items-center gap-2" style={{ "--delay": `${250 + i * 90}ms` } as React.CSSProperties}>
+                <span className="font-display text-lg font-light leading-none text-ember">{String(i + 1).padStart(2, "0")}</span>
+                <span className="border-l border-zinc-600 pl-2 text-[11px] leading-tight text-zinc-400">
+                  {title} <span className="text-zinc-500">· {sub}</span>
                 </span>
               </span>
             </li>
           ))}
         </ol>
-      </header>
-      <main className="flex flex-1 flex-col gap-4 p-4 lg:flex-row">
-        <aside className="flex w-full flex-col gap-4 lg:w-96 lg:shrink-0">
-          {(["A", "B"] as const).map((id) => (
-            <FighterForm
-              key={id}
-              draft={state[id].draft}
-              errors={state[id].check.errors}
-              fighter={state[id].check.fighter}
-              onChange={(d) => change(id, d)}
-            />
-          ))}
-          <StrikePicker draft={strike} onChange={setStrike} />
-          <JointLockPanel draft={lockDraft} judgment={lockJudgment} onChange={setLockDraft} />
-          <ComboList steps={combo} onChange={setCombo} onAdd={() => currentStep && setCombo((c) => [...c, currentStep])} canAdd={currentStep !== null} current={playback.current} />
-          {!allValid && (
-            <p className="rounded border border-amber-700 bg-amber-950/40 p-2 text-xs text-amber-300" role="status">
-              안내가 있는 칸을 고치면 실험할 수 있어요. 3D는 마지막으로 올바른 값을 보여 줘요.
-            </p>
-          )}
-          <p className="text-xs text-zinc-500">입력값은 서버로 보내지 않고 이 브라우저 안에서만 써요.</p>
-        </aside>
-        <section className="flex min-w-0 flex-1 flex-col gap-3">
-          <Stage3D
-            fighterA={state.A.lastValid}
-            fighterB={state.B.lastValid}
-            onReady={onStageReady}
-            className="h-[55vh] min-h-[340px] w-full"
-          />
-          <PlaybackBar
-            rate={rate}
-            playing={playback.playing}
-            paused={playback.paused}
-            canPlay={canPlay}
-            canReplay={hasPlayed && !playback.playing}
-            onPlay={onPlay}
-            onPauseToggle={onPauseToggle}
-            onReplay={onReplay}
-            onRate={onRate}
-          />
-          <p className="text-xs text-zinc-400" role="status">
-            {playback.playing
-              ? playback.contactedAt === playback.current
-                ? playback.reached
-                  ? "닿음 — 닿는 순간 끝점(주먹·발·무릎·팔꿈치) 속도가 정한 속도와 같아요"
-                  : "노린 곳까지 다 닿지 못했어요 — 두 선수 키 차이가 커서 몸이 겹치지 않는 거리에서는 닿지 않아요 (숫자 계산에는 영향 없음)"
-                : `재생 중… ${steps.length > 1 ? `${playback.current + 1}/${steps.length}` : ""}`
-              : "마우스로 끌어 시점을 돌리고, 휠로 확대·축소해요."}
+        {/* 접은 막 다시 펴기 */}
+        {!leftOpen && (
+          <button type="button" onClick={() => setLeftOpen(true)} className={`${OVERLAY_TOGGLE} left-4`}>
+            입력 펴기 ▸
+          </button>
+        )}
+        {!rightOpen && (
+          <button type="button" onClick={() => setRightOpen(true)} className={`${OVERLAY_TOGGLE} right-4`}>
+            ◂ 결과 펴기
+          </button>
+        )}
+      </div>
+
+      {/* 휴대폰 서랍 탭 */}
+      <nav className="sticky top-0 z-20 flex border-b border-zinc-800 bg-zinc-950/95 backdrop-blur lg:hidden" role="tablist" aria-label="정보">
+        {MOBILE_TABS.map(([t, label]) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={mobileTab === t}
+            onClick={() => setMobileTab(t)}
+            className={`flex-1 py-2.5 text-sm ${mobileTab === t ? "border-b-2 border-ember font-semibold text-zinc-100" : "text-zinc-400"}`}
+          >
+            {label}
+            {t === "result" && results.length > 0 && <span className="ml-1 text-ember">●</span>}
+          </button>
+        ))}
+      </nav>
+
+      {/* 왼쪽 막: 입력 */}
+      <aside className={`${OVERLAY_PANEL} lg:left-4 lg:w-[360px] ${leftOpen ? "lg:block" : "lg:hidden"}`} aria-label="입력">
+        <OverlayHead title="입력" onClose={() => setLeftOpen(false)} side="left" />
+        <div className="divide-y divide-zinc-800/70">
+          <div className={inTab("fighters")}>
+            {(["A", "B"] as const).map((id) => (
+              <FighterForm
+                key={id}
+                draft={state[id].draft}
+                errors={state[id].check.errors}
+                fighter={state[id].check.fighter}
+                onChange={(d) => change(id, d)}
+              />
+            ))}
+          </div>
+          <div className={inTab("strike")}>
+            <StrikePicker draft={strike} onChange={setStrike} />
+            <ComboList steps={combo} onChange={setCombo} onAdd={() => currentStep && setCombo((c) => [...c, currentStep])} canAdd={currentStep !== null} current={playback.current} />
+          </div>
+          <div className={inTab("lock")}>
+            <JointLockPanel draft={lockDraft} judgment={lockJudgment} onChange={setLockDraft} />
+          </div>
+        </div>
+        {!allValid && (
+          <p className="my-2 rounded border border-amber-700 bg-amber-950/40 p-2 text-xs text-amber-300" role="status">
+            안내가 있는 칸을 고치면 실험할 수 있어요. 3D는 마지막으로 올바른 값을 보여 줘요.
           </p>
+        )}
+        <p className="py-2 text-[11px] text-zinc-500">입력값은 서버로 보내지 않고 이 브라우저 안에서만 써요.</p>
+      </aside>
+
+      {/* 오른쪽 막: 결과 */}
+      <aside
+        className={`${OVERLAY_PANEL} lg:right-4 lg:w-[400px] ${mobileTab === "result" ? "block" : "hidden"} ${rightOpen ? "lg:block" : "lg:hidden"}`}
+        aria-label="결과"
+      >
+        <OverlayHead title="결과" onClose={() => setRightOpen(false)} side="right" />
+        <div className="divide-y divide-zinc-800/70">
           <ResultPanel results={results} contactedCount={shownCount} selected={selected} onSelect={setSelected} />
           <Legend loads={loads} />
-          <ExportButtons disabled={!canExport} onCsv={onCsv} onPdf={onPdf} />
-        </section>
-      </main>
+          <div className="py-3">
+            <ExportButtons disabled={!canExport} onCsv={onCsv} onPdf={onPdf} />
+          </div>
+        </div>
+      </aside>
     </div>
     <PrintReport title={reportTitle} fighters={playedFighters} results={results} loads={loads} snapshot={snapshot} />
     </>

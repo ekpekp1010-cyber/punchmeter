@@ -104,3 +104,9 @@ main section h2 {
     animation: none;
   }
 }
+
+/* 무대 위 반투명 막의 스크롤 막대를 얇고 어둡게 */
+aside {
+  scrollbar-width: thin;
+  scrollbar-color: #43372f transparent;
+}

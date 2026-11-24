@@ -76,7 +76,7 @@ export default function StrikePicker({ draft, onChange }: Props) {
   const moving = draft.move !== null;
 
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3 text-sm" aria-label="기술 고르기">
+    <section className="flex flex-col gap-2 py-3 text-sm" aria-label="기술 고르기">
       <h2 className="text-sm font-semibold">기술</h2>
 
       <div className="flex items-center gap-1" role="radiogroup" aria-label={moving ? "움직이는 선수" : "때리는 선수"}>

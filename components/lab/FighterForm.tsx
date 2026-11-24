@@ -75,7 +75,7 @@ export default function FighterForm({ draft, errors, fighter, onChange }: Props)
   const shape = fighter ? bodyShape(fighter, MODELS[MODEL_KEY[fighter.sex]]) : null;
 
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3" aria-label={`선수 ${draft.id} 정보`}>
+    <section className="flex flex-col gap-2 py-3" aria-label={`선수 ${draft.id} 정보`}>
       <div className="flex items-center justify-between">
         <h2 className={`text-sm font-semibold ${color}`}>선수 {draft.id}</h2>
         <div className="flex gap-1 text-sm" role="radiogroup" aria-label={`선수 ${draft.id} 성별`}>

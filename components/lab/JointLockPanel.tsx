@@ -46,7 +46,7 @@ export default function JointLockPanel({ draft, judgment, onChange }: Props) {
   const set = (patch: Partial<JointLockDraft>) => onChange({ ...draft, ...patch });
   const ref = JOINT_LOCK_REFERENCE[draft.lock];
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3 text-sm" aria-label="관절기">
+    <section className="flex flex-col gap-2 py-3 text-sm" aria-label="관절기">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">관절기</h2>
         <button type="button" onClick={() => set({ open: !draft.open })} className={btn(draft.open)} aria-pressed={draft.open}>

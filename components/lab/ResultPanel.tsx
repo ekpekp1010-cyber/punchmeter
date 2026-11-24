@@ -2,6 +2,7 @@
 // Design Ref: §5.3 ResultPanel, §5.4 "결과 숫자마다 계체량/리게인, 추정 범위, 근거" (PLAN 작업 16)
 // 계산은 lib/lab에서 하고, 이 부품은 받은 숫자를 보여 주기만 한다.
 
+import { useState } from "react";
 import { shortCite } from "@/lib/reference";
 import { bodyPartInfo, techniqueInfo } from "@/lib/reference";
 import type { ByWeight, Estimate, EstimateBasis, StrikeResult } from "@/lib/types";
@@ -71,10 +72,29 @@ interface Props {
   onSelect: (i: number) => void;
 }
 
+/** 요약 숫자 하나: 큰 숫자 + 단위 + 근거(색) + 추정 범위 */
+function Stat({ label, unit, e, digits, big = false }: { label: string; unit: string; e: Estimate; digits: number; big?: boolean }) {
+  return (
+    <div className="flex flex-col">
+      <dt className="text-[11px] text-zinc-400">{label}</dt>
+      <dd className={`font-display font-semibold leading-tight tabular-nums ${big ? "text-2xl text-ember" : "text-xl"}`}>
+        {fmt(e.value, digits)}
+        <span className="ml-1 font-sans text-[10px] font-normal text-zinc-500">{unit}</span>
+      </dd>
+      <dd className={`text-[10px] ${BASIS_COLOR[e.basis]}`}>
+        {BASIS_LABEL[e.basis]}
+        {e.low !== undefined && e.high !== undefined && <span className="text-zinc-500"> · {rangeText(e, digits)}</span>}
+      </dd>
+    </div>
+  );
+}
+
 export default function ResultPanel({ results, contactedCount, selected, onSelect }: Props) {
+  /** 상세(표·출처·리게인)를 펼쳤는가 */
+  const [open, setOpen] = useState(false);
   if (results.length === 0) {
     return (
-      <section className="rounded-lg border border-zinc-800 p-3 text-sm text-zinc-500" aria-label="결과">
+      <section className="py-3 text-sm text-zinc-500" aria-label="결과">
         재생하면 이곳에 속도·운동량·운동에너지·추정 충격력·강도 지수와 의학적 판단이 연구 근거와 함께 나와요.
       </section>
     );
@@ -83,7 +103,7 @@ export default function ResultPanel({ results, contactedCount, selected, onSelec
   const info = techniqueInfo(r.step.technique);
 
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-800 p-3 text-sm" aria-label="결과">
+    <section className="flex flex-col gap-2 py-3 text-sm" aria-label="결과">
       {results.length > 1 && (
         <div className="flex flex-wrap gap-1" role="tablist" aria-label="연타 순서">
           {results.map((x, i) => (
@@ -111,6 +131,26 @@ export default function ResultPanel({ results, contactedCount, selected, onSelec
           <span className="ml-2 rounded bg-red-900 px-1.5 py-0.5 text-xs text-red-200">맞음</span>
         )}
       </h2>
+      {/* 요약: 핵심 숫자 셋 (계체량 기준) — 숫자마다 근거를 붙인다 */}
+      <dl className="grid grid-cols-3 gap-2">
+        <Stat label="추정 충격력" unit="N" e={r.force.weighIn} digits={0} big />
+        <Stat label="강도 지수" unit="0~100" e={r.intensityIndex.weighIn} digits={0} />
+        <Stat label="운동에너지" unit="J" e={r.energy.weighIn} digits={0} />
+      </dl>
+      <p className={`text-sm leading-relaxed text-zinc-200 ${open ? "hidden" : "line-clamp-2"}`}>
+        <span className="text-zinc-500">의학적 판단 · </span>
+        {r.medical.text}
+      </p>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="self-start rounded px-2 py-0.5 text-xs text-ember hover:bg-zinc-800"
+      >
+        {open ? "간단히 보기 ▴" : "자세히 보기 — 출처·추정 범위·리게인 ▾"}
+      </button>
+      {open && (
+        <>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[480px] text-sm">
           <thead>
@@ -142,6 +182,9 @@ export default function ResultPanel({ results, contactedCount, selected, onSelec
         초록 = 연구값 · 파랑 = 사용자 입력값 · 주황 = 추정 · 회색 = 자료 없음. 충격력은 연구 평균 접촉 시간(walilko2005)으로 환산한 추정이에요.
         이 숫자는 교육·실험용이며 의학적 진단이 아니에요.
       </p>
+        </>
+      )}
+      {!open && <p className="text-[10px] text-zinc-500">계체량 기준 · 교육·실험용이며 의학적 진단이 아니에요.</p>}
     </section>
   );
 }

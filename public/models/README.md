@@ -17,8 +17,10 @@
 - 복장: 남자는 허리~허벅지 가운데 면을 빨간 반바지 재질로 칠함 (자산 팩에 격투기 반바지가 없어서), 여자는 `female_sportsuit01` 운동복
 - 재질: 몸·옷·눈은 불투명, 눈썹·속눈썹은 잘라내기(MASK) — 반투명으로 내보내면 웹에서 입 안이 비쳐 보여서
 - 눈 `high-poly`, 눈썹 `eyebrow001`, 속눈썹 `eyelashes01`
-- 체형은 평균값(MPFB weight·muscle 0.5)에서 성별만 정하고, 모양 변형(morph) 3가지를 함께 넣었다 (PLAN 작업 9):
-  - `light`: weight 0.0 / `heavy`: weight 1.0 / `muscular`: muscle 1.0 (기본과의 차이)
+- 체형은 격투기 선수처럼 근육 최대(MPFB weight 0.5·muscle 1.0)에서 성별만 정하고, 모양 변형(morph) 2가지를 함께 넣었다
+  (PLAN 작업 9, 2026-11-24 바꿈):
+  - `lean`: muscle 1.0·weight 0.0 (마르고 근육이 드러남) / `bulk`: muscle 1.0·weight 1.0 (근육 덩치가 큼) — 기본과의 차이
+  - 웹에서는 피부를 조금 그을린 색으로 바꾸고 근육 사이 골을 셰이더로 새긴다 (`components/scene/muscleDetail.ts`)
 - `models.json`: 캐릭터별 키·팔 벌린 길이·한쪽 팔 길이·체형별 몸 부피(L, 옷 없이 잰 값).
   브라우저는 이 값으로 키(크기 배율)·체중(변형 섞기)·리치(위팔 뼈 배율)를 맞춘다 (`lib/motion/bodyShape.ts`).
   체중을 부피로 바꿀 때 "사람 몸 밀도 ≈ 물(1 kg/L)"이라는 그림용 가정을 쓴다. 이 값은 3D 모양에만 쓰고 계산에는 쓰지 않는다.

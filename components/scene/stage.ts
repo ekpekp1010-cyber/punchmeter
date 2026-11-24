@@ -12,6 +12,7 @@ import { smoothStep } from "@/lib/motion/path";
 import { isMoveStep } from "@/lib/lab/combo";
 import type { BodyPart, FighterId, GloveOz, JointLockId, MoveStep, PartLoad, Sex } from "@/lib/types";
 import { colorOfStep } from "./loadColors";
+import { applyMuscleDetail, landmarksOf } from "./muscleDetail";
 import { ArrowLayer } from "./arrows";
 import { JointArrow, poseJointLock } from "./jointLockPose";
 import { FighterRig, type PoseSnapshot } from "./fighterRig";
@@ -26,6 +27,26 @@ import {
 
 /** 캐릭터 치수 (키·팔 길이·체형별 부피·부위 위치) */
 export const MODELS = modelsJson as unknown as ModelsJson;
+
+/**
+ * 피부를 조금 그을린 색으로 (2026-11-24 사용자 요청: 격투기 선수는 피부가 조금 어둡다).
+ * 피부 그림에 곱하는 색과, 땀에 살짝 젖은 듯 윤기를 주는 거칠기 — 그림용 값.
+ */
+const SKIN_TAN = new THREE.Color(0.8, 0.63, 0.5);
+const SKIN_ROUGHNESS = 0.42;
+
+/**
+ * 재질 이름이 ".body"(몸 피부)로 끝나면 그을린 피부색·윤기를 입히고 근육 갈라짐을 새긴다
+ * (반바지·옷·눈은 그대로)
+ */
+function dressSkin(mesh: THREE.SkinnedMesh, sex: Sex) {
+  for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+    if (!m.name.endsWith(".body") || !(m instanceof THREE.MeshStandardMaterial)) continue;
+    m.color.copy(SKIN_TAN);
+    m.roughness = SKIN_ROUGHNESS;
+    applyMuscleDetail(m, landmarksOf(mesh, MODELS[MODEL_KEY[sex]], sex));
+  }
+}
 
 /** 재생 상태 알림 */
 export interface PlaybackEvents {
@@ -249,6 +270,7 @@ export class Stage {
         // 부위 색칠(PLAN 작업 18)은 선수마다 따로 해야 하므로 모양·재질을 복사해 같은 성별 두 선수가 나눠 쓰지 않게 한다
         mesh.geometry = mesh.geometry.clone();
         mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone();
+        dressSkin(mesh, sex);
         meshes.push(mesh);
       }
     });

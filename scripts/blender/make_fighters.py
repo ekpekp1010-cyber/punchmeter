@@ -1,7 +1,7 @@
 # PLAN 작업 3 (Design Ref: §4.4 3D 캐릭터 준비) — MPFB2로 남·녀 선수 캐릭터와 뼈대를 만들어 .glb로 내보낸다.
 # 실행: blender --background --python scripts/blender/make_fighters.py -- <내보낼 폴더>
 #
-# - 체형은 MPFB 기본값(평균)에서 성별만 정하고, 마름·무거움·근육형을 모양 변형(morph)으로 함께 넣는다 (작업 9).
+# - 체형은 근육 최대(MPFB muscle 1.0)에서 성별만 정하고, 마름(lean)·덩치(bulk)를 모양 변형(morph)으로 함께 넣는다 (작업 9).
 #   키·팔 벌린 길이·체형별 몸 부피는 public/models/models.json에 적어 브라우저가 크기·체형을 맞출 때 쓴다.
 # - 뼈대는 게임용 "game_engine" (53개 뼈, upperarm_l·lowerarm_l 같은 이름)을 쓴다. 코드로 팔다리를 움직이기 쉽다.
 # - 피부는 일반 피부를 쓰고, 여자 선수는 자산 팩의 운동복(크롭 상의 + 레깅스)을 입힌다.
@@ -42,14 +42,15 @@ SHORTS_BOTTOM_RATIO = 0.45
 # 반바지로 칠할 수 있는 뼈 (이 뼈의 영향이 가장 큰 면만 칠한다 → 옆에 내린 손·팔은 칠하지 않음)
 SHORTS_BONES = {"pelvis", "spine_01", "thigh_l", "thigh_r"}
 
-# 체형 변형 (PLAN 작업 9). MPFB의 weight·muscle 값(0~1)으로 캐릭터를 따로 만들어 기본 체형과의 차이를
-# 모양 변형(morph)으로 넣는다. 브라우저는 입력 체중에 맞춰 이 변형을 섞는다 (lib/motion/bodyShape.ts).
-#   base: 기본(평균) / light: 가장 마름 / heavy: 가장 무거움 / muscular: 근육 최대
+# 체형 변형 (PLAN 작업 9, 2026-11-24 격투기 선수 체형으로 바꿈). MPFB의 (weight, muscle) 값(0~1)으로 캐릭터를
+# 따로 만들어 기본 체형과의 차이를 모양 변형(morph)으로 넣는다. 브라우저는 키·체중에 맞춰 이 변형을 섞는다
+# (lib/motion/bodyShape.ts). 격투기 선수는 근육이 많고 지방이 적다고 보고 근육(muscle)은 늘 최대(1.0)로 두고,
+# 같은 키에서 체중이 무거우면 근육 덩치가 커지고(bulk) 가벼우면 마르고 선명해지게(lean) 한다 (그림용).
+#   base: 근육형 기본 / lean: 근육형 + 가장 마름 / bulk: 근육형 + 가장 무거움
 BODY_VARIANTS = {
-    "base": (0.5, 0.5),
-    "light": (0.0, 0.5),
-    "heavy": (1.0, 0.5),
-    "muscular": (0.5, 1.0),
+    "base": (0.5, 1.0),
+    "lean": (0.0, 1.0),
+    "bulk": (1.0, 1.0),
 }
 
 # 눈·눈썹·속눈썹 (자산 팩의 CC0 자료)

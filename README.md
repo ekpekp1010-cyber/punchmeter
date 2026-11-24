@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 펀치미터 (PunchMeter) — 3D 타격 실험실
 
-## Getting Started
+> "저 타격은 얼마나 아플까?"에 **공개 연구에 근거한 숫자**와 **3D 장면**으로 답하는 웹 앱
 
-First, run the development server:
+선수 두 명의 정보(성별·계체량·키·리치·글러브)와 기술·노릴 부위·속도·수비를 정하면,
+사람처럼 생긴 3D 격투기 선수가 그 타격을 슬로우 모션으로 재생하고
+닿는 순간의 **속도·운동량·운동에너지·추정 충격력·타격 강도 지수·의학적 판단**을
+출처·추정 범위와 함께 보여 줍니다.
+
+## 주요 기능
+
+- **3D 타격 재생**: 펀치(잽·크로스·훅·어퍼컷), 킥(로우·카프·미들·하이·프런트·사이드), 팔꿈치·무릎, 움직임(빽스텝)
+  - 슬로우 모션(0.1·0.25·0.5배)·원본 속도, 마우스로 시점 돌리기
+  - 닿는 순간 주먹·발 끝에 진행 방향 화살표
+  - 근육형 캐릭터 — 키 대비 체중에 따라 근육 크기가 바뀜 (그림용)
+- **노릴 부위 22곳**과 수비(맞음 / 팔로 막음)
+- **연타 조립**(최대 10개)과 **부위별 누적 충격 색**(한계 힘 대비 5단계, 자료 없으면 회색 빗금)
+- **관절기**: 암바·기무라·아메리카나·니바·힐훅·앵클록의 꺾는 각도, 회전 화살표, 정상 움직임 범위와 비교한 판단
+- **계체량·리게인 비교**, 글러브(맨손~16oz) 보정, 강도 지수, 의학적 판단(근거 연구 표시)
+- **CSV·PDF 내려받기** (브라우저 안에서 만듦)
+
+## 숫자를 다루는 원칙
+
+- 숫자를 지어내지 않습니다. 모든 숫자에 **연구값 / 사용자 입력값 / 추정 / 자료 없음** 중 하나와 출처·추정 범위를 붙입니다.
+- 3D 모양(체형·근육·피부)은 그림용이며 계산에 쓰지 않습니다.
+- 교육·실험용이며 **의학적 진단이 아닙니다**.
+- 연구 재현 검증 결과는 [docs/연구재현검증.md](docs/연구재현검증.md)에 있습니다 (현재 10개 중 3개만 ±15% 안 — 목표 미달을 그대로 기록).
+
+## 개인정보
+
+- 입력한 선수 정보와 결과는 **서버로 보내지 않고 브라우저 안에서만** 계산합니다. 탭을 닫으면 사라집니다.
+- 회원가입·로그인·데이터베이스가 없습니다.
+
+## 기술
+
+- [Next.js](https://nextjs.org) 16 · React 19 · TypeScript · Tailwind CSS 4
+- [three.js](https://threejs.org) — 브라우저 3D
+- Blender 5.3 + MPFB2 (MakeHuman 확장) — 3D 사람 캐릭터 (CC0, [public/models/README.md](public/models/README.md))
+- Vitest — 계산 자동 테스트
+- Vercel — 배포
+
+## 직접 실행하기
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm test        # 계산 테스트
+npm run build   # 배포용 빌드
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+환경 변수(API 키)는 필요 없습니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 문서
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| 문서 | 내용 |
+|---|---|
+| [PRD.md](PRD.md) | 서비스 기획서 (문제, 목표, 기능, 범위) |
+| [PLAN.md](PLAN.md) | 작업 순서, 성공 기준, 진행 결과 |
+| [DESIGN.md](DESIGN.md) | 화면·데이터 흐름·기술 설계 |
 
-## Learn More
+## 폴더
 
-To learn more about Next.js, take a look at the following resources:
+- `app/` 화면 · `components/` 화면 부품(`lab/` 입력·결과, `scene/` 3D)
+- `lib/` 계산(`physics/`), 연구값·출처(`reference/`), 실험 계산(`lab/`), 3D 동작(`motion/`), 내보내기(`export/`)
+- `public/models/` 3D 캐릭터(.glb) · `scripts/blender/` 캐릭터 만드는 스크립트
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 라이선스·출처
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 3D 캐릭터 자산: MakeHuman/MPFB 기본 자산 (CC0)
+- 연구 자료: 공개 논문, 출처는 앱 화면과 `lib/reference/sources.ts`에 표시

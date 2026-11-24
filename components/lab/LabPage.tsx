@@ -74,18 +74,21 @@ const MOBILE_TABS: [MobileTab, string][] = [
 ];
 
 /** 무대 위에 뜨는 반투명 막 (넓은 화면). 휴대폰에서는 무대 아래 보통 흐름으로 놓인다 */
-const OVERLAY_PANEL =
-  "px-4 lg:absolute lg:top-20 lg:bottom-28 lg:z-10 lg:overflow-y-auto lg:overscroll-contain lg:rounded-xl lg:border lg:border-zinc-700/50 lg:bg-zinc-950/60 lg:shadow-2xl lg:backdrop-blur-md";
+// (사용자 요청 2026-11-24) 막에 상자·테두리를 두지 않는다. 글자는 화면 가장자리에서 서서히 어두워지는 바탕 위에 놓여
+// 무대와 한 화면으로 이어진다. 머리(이름·접기)는 고정이고 그 아래만 스크롤된다.
+const OVERLAY_PANEL = "px-4 lg:absolute lg:top-20 lg:bottom-24 lg:z-10 lg:flex-col lg:px-0";
+/** 막 안의 스크롤 영역: 얇은 구리빛 스크롤 막대(globals.css .forge-scroll), 위아래 끝은 흐리게 사라진다 */
+const OVERLAY_SCROLL = "forge-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-3";
 /** 접은 막을 다시 펴는 단추 (넓은 화면만) */
 const OVERLAY_TOGGLE =
-  "absolute top-20 z-10 hidden rounded-full border border-zinc-700/60 bg-zinc-950/70 px-3 py-1 text-xs text-zinc-200 backdrop-blur-md hover:bg-zinc-900 lg:block";
+  "absolute top-20 z-10 hidden rounded-full bg-zinc-950/50 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-900/80 hover:text-zinc-100 lg:block";
 
 /** 막 머리 (넓은 화면만): 이름 + 접기 */
 function OverlayHead({ title, onClose, side }: { title: string; onClose: () => void; side: "left" | "right" }) {
   return (
-    <div className="sticky top-0 z-10 -mx-4 hidden items-center justify-between border-b border-zinc-800/70 bg-zinc-950/80 px-4 py-2 backdrop-blur lg:flex">
-      <span className="font-display text-xs uppercase tracking-[0.2em] text-zinc-400">{title}</span>
-      <button type="button" onClick={onClose} className="rounded px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
+    <div className="hidden items-center justify-between pb-1 pr-3 lg:flex">
+      <span className="font-display text-[11px] uppercase tracking-[0.25em] text-ember/80">{title}</span>
+      <button type="button" onClick={onClose} className="rounded px-2 py-0.5 text-xs text-zinc-500 hover:text-zinc-100">
         {side === "left" ? "◂ 접기" : "접기 ▸"}
       </button>
     </div>
@@ -298,6 +301,15 @@ export default function LabPage() {
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(45%_70%_at_50%_0%,rgba(197,121,75,0.14),transparent_70%),linear-gradient(to_bottom,rgba(18,17,16,0.7),transparent_18%,transparent_75%,rgba(18,17,16,0.75))]"
         />
+        {/* 넓은 화면: 입력(왼쪽)·결과(오른쪽) 글자 뒤 바탕 — 상자 없이 화면 가장자리에서 가운데로 서서히 걷히는 어둠 */}
+        {leftOpen && (
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 hidden w-[600px] bg-linear-to-r from-zinc-950/95 via-zinc-950/70 to-transparent lg:block" />
+        )}
+        {rightOpen && (
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 hidden w-[620px] bg-linear-to-l from-zinc-950/95 via-zinc-950/70 to-transparent lg:block" />
+        )}
+        {/* 넓은 화면: 맨 아래 한 줄(재생 조절·순서 캡션) 바탕 */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 hidden h-32 bg-linear-to-t from-zinc-950 via-zinc-950/80 to-transparent lg:block" />
         {/* 제목 (무대 왼쪽 위에 작게) */}
         <header className="pointer-events-none absolute left-4 top-3 lg:left-6 lg:top-4">
           <h1>
@@ -311,9 +323,9 @@ export default function LabPage() {
             </span>
           </h1>
         </header>
-        {/* 재생 조절 + 상태 (넓은 화면: 아래 가운데에 떠 있음) */}
-        <div className="absolute inset-x-3 bottom-3 flex flex-col items-center gap-1 lg:inset-x-auto lg:bottom-14 lg:left-1/2 lg:-translate-x-1/2">
-          <div className="rounded-2xl border border-zinc-700/60 bg-zinc-950/70 px-3 py-1.5 backdrop-blur-md lg:rounded-full">
+        {/* 재생 조절 + 상태 (휴대폰: 무대 아래쪽에 떠 있음 / 넓은 화면: 맨 아래 한 줄 가운데, 상태 글은 그 위) */}
+        <div className="absolute inset-x-3 bottom-3 z-20 flex flex-col items-center gap-1 lg:inset-x-auto lg:bottom-3 lg:left-1/2 lg:-translate-x-1/2 lg:flex-col-reverse">
+          <div className="rounded-2xl bg-zinc-950/70 px-3 py-1.5 backdrop-blur-md lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
             <PlaybackBar
               rate={rate}
               playing={playback.playing}
@@ -326,23 +338,30 @@ export default function LabPage() {
               onRate={onRate}
             />
           </div>
-          <p className="max-w-xl rounded bg-zinc-950/50 px-2 text-center text-[11px] text-zinc-300" role="status">
+          <p className="max-w-xl rounded bg-zinc-950/50 px-2 text-center text-[11px] text-zinc-300 lg:bg-transparent lg:text-zinc-400" role="status">
             {statusText}
           </p>
         </div>
-        {/* 01~04 순서 캡션 (넓은 화면: 맨 아래 가장자리에 얇게) */}
-        <ol className="pointer-events-none absolute inset-x-6 bottom-2 hidden justify-between lg:flex" aria-label="사용 순서">
-          {HEADER_STEPS.map(([title, sub], i) => (
-            <li key={title} className="reveal">
-              <span className="flex items-center gap-2" style={{ "--delay": `${250 + i * 90}ms` } as React.CSSProperties}>
-                <span className="font-display text-lg font-light leading-none text-ember">{String(i + 1).padStart(2, "0")}</span>
-                <span className="border-l border-zinc-600 pl-2 text-[11px] leading-tight text-zinc-400">
-                  {title} <span className="text-zinc-500">· {sub}</span>
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
+        {/* 01~04 순서 캡션 (아주 넓은 화면: 맨 아래 한 줄의 양 끝, 재생 조절 좌우) */}
+        {[HEADER_STEPS.slice(0, 2), HEADER_STEPS.slice(2)].map((group, g) => (
+          <ol
+            key={g}
+            className={`pointer-events-none absolute bottom-4 hidden gap-6 xl:flex ${g === 0 ? "left-6" : "right-6"}`}
+            aria-label={g === 0 ? "사용 순서 1~2" : "사용 순서 3~4"}
+          >
+            {group.map(([title, sub], j) => {
+              const i = g * 2 + j;
+              return (
+                <li key={title} className="reveal" title={sub}>
+                  <span className="flex items-center gap-2" style={{ "--delay": `${250 + i * 90}ms` } as React.CSSProperties}>
+                    <span className="font-display text-lg font-light leading-none text-ember">{String(i + 1).padStart(2, "0")}</span>
+                    <span className="border-l border-zinc-700 pl-2 text-[11px] leading-tight text-zinc-400">{title}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        ))}
         {/* 접은 막 다시 펴기 */}
         {!leftOpen && (
           <button type="button" onClick={() => setLeftOpen(true)} className={`${OVERLAY_TOGGLE} left-4`}>
@@ -374,9 +393,10 @@ export default function LabPage() {
       </nav>
 
       {/* 왼쪽 막: 입력 */}
-      <aside className={`${OVERLAY_PANEL} lg:left-4 lg:w-[360px] ${leftOpen ? "lg:block" : "lg:hidden"}`} aria-label="입력">
+      <aside className={`${OVERLAY_PANEL} lg:left-6 lg:w-[360px] ${leftOpen ? "lg:flex" : "lg:hidden"}`} aria-label="입력">
         <OverlayHead title="입력" onClose={() => setLeftOpen(false)} side="left" />
-        <div className="divide-y divide-zinc-800/70">
+        <div className={OVERLAY_SCROLL}>
+        <div className="divide-y divide-zinc-800/60">
           <div className={inTab("fighters")}>
             {(["A", "B"] as const).map((id) => (
               <FighterForm
@@ -402,19 +422,22 @@ export default function LabPage() {
           </p>
         )}
         <p className="py-2 text-[11px] text-zinc-500">입력값은 서버로 보내지 않고 이 브라우저 안에서만 써요.</p>
+        </div>
       </aside>
 
       {/* 오른쪽 막: 결과 */}
       <aside
-        className={`${OVERLAY_PANEL} lg:right-4 lg:w-[400px] ${mobileTab === "result" ? "block" : "hidden"} ${rightOpen ? "lg:block" : "lg:hidden"}`}
+        className={`${OVERLAY_PANEL} lg:right-6 lg:w-[380px] ${mobileTab === "result" ? "block" : "hidden"} ${rightOpen ? "lg:flex" : "lg:hidden"}`}
         aria-label="결과"
       >
         <OverlayHead title="결과" onClose={() => setRightOpen(false)} side="right" />
-        <div className="divide-y divide-zinc-800/70">
-          <ResultPanel results={results} contactedCount={shownCount} selected={selected} onSelect={setSelected} />
-          <Legend loads={loads} />
-          <div className="py-3">
-            <ExportButtons disabled={!canExport} onCsv={onCsv} onPdf={onPdf} />
+        <div className={OVERLAY_SCROLL}>
+          <div className="divide-y divide-zinc-800/60">
+            <ResultPanel results={results} contactedCount={shownCount} selected={selected} onSelect={setSelected} />
+            <Legend loads={loads} />
+            <div className="py-3">
+              <ExportButtons disabled={!canExport} onCsv={onCsv} onPdf={onPdf} />
+            </div>
           </div>
         </div>
       </aside>

@@ -13,6 +13,8 @@
   --soft: #c5794b; /* 구리 빛 (강조) */
   --light: #ede3da; /* 글자 */
   --background: var(--deep);
+  /* 고르기 상자·입력 칸 등 브라우저 기본 부품도 어두운 모양으로 */
+  color-scheme: dark;
   --foreground: var(--light);
   /* 화면 등장에 쓰는 곡선 (Forge Gate와 같은 값) */
   --ease-quart-out: cubic-bezier(0.25, 1, 0.5, 1);
@@ -105,8 +107,49 @@ main section h2 {
   }
 }
 
-/* 무대 위 반투명 막의 스크롤 막대를 얇고 어둡게 */
-aside {
-  scrollbar-width: thin;
-  scrollbar-color: #43372f transparent;
+/*
+ * 입력·결과 막의 스크롤 막대 (사용자 요청: 웹 분위기에 맞게).
+ * 화살표 단추 없이 얇은 크림색 선, 마우스를 올리면 구리빛. 막 위아래 끝은 글자가 서서히 사라진다.
+ * 크롬·엣지·사파리는 ::-webkit-scrollbar로 그리고, 그것이 없는 파이어폭스만 표준 속성을 쓴다
+ * (크롬은 표준 속성이 있으면 ::-webkit-scrollbar를 무시하므로 둘을 나눈다).
+ */
+.forge-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.forge-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.forge-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.forge-scroll::-webkit-scrollbar-thumb {
+  background: rgba(237, 227, 218, 0.14);
+  border-radius: 999px;
+}
+.forge-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(197, 121, 75, 0.6);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .forge-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(197, 121, 75, 0.5) transparent;
+  }
+}
+@media (min-width: 64rem) {
+  .forge-scroll {
+    mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 28px), transparent);
+  }
+}
+
+/* PDF(인쇄)는 흰 종이에: 화면용 어두운 바탕을 인쇄에서는 쓰지 않는다 */
+@media print {
+  :root {
+    color-scheme: light;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
 }

@@ -6,7 +6,7 @@
 
 import { partThreshold } from "../physics";
 import { HEAD_FRACTURE, MUSCLE_CONTUSION, TORSO_FORCE, bodyPartInfo, techniqueInfo } from "../reference";
-import type { BodyPart, Fighter, MedicalJudgment, StrikeStep } from "../types";
+import type { BodyPart, Fighter, MedicalJudgment, StrikeStep, TechniqueId } from "../types";
 
 /**
  * 실제로 맞은 부위.
@@ -61,6 +61,21 @@ function extraLines(part: BodyPart, forceN: number): { lines: string[]; sourceId
   return { lines, sourceIds };
 }
 
+/**
+ * 머리 회전 주의 (PRD must 2 "훅·킥 머리 타격에는 회전이 커서 실제 위험이 더 클 수 있음").
+ * 이 판단은 힘(N)만 비교하므로, 머리를 크게 돌리는 훅·킥은 숫자보다 위험할 수 있다고 함께 알린다.
+ * 새 숫자는 붙이지 않는다. 훅은 올림픽 복서 펀치 측정에서 머리 회전이 가장 컸던 연구(viano2005)를 근거로 단다.
+ */
+function rotationLine(part: BodyPart, technique: TechniqueId | undefined): { line: string; sourceIds: string[] } | null {
+  if (!technique || bodyPartInfo(part).region !== "head") return null;
+  const isHook = technique === "hook";
+  if (!isHook && techniqueInfo(technique).kind !== "kick") return null;
+  return {
+    line: `회전 주의: ${isHook ? "훅" : "킥"}은 머리를 크게 돌려서 실제 위험이 이 힘 숫자보다 더 클 수 있음 (이 판단은 힘만 비교함)`,
+    sourceIds: isHook ? ["viano2005"] : [],
+  };
+}
+
 /** 한계 힘 대비 비율로 단계 문장 */
 function levelText(ratio: number): string {
   if (ratio >= 1) return "한계 힘을 넘는 충격 — 부상 위험 구간";
@@ -72,8 +87,9 @@ function levelText(ratio: number): string {
 /**
  * 맞은 부위의 의학적 판단.
  * forceN은 리게인 기준 추정 충격력(N), defender는 맞은 선수 (성별·키로 한계 힘을 정한다).
+ * technique을 주면 훅·킥 머리 타격에 회전 주의를 덧붙인다.
  */
-export function medicalJudgment(part: BodyPart, forceN: number, defender: Fighter): MedicalJudgment {
+export function medicalJudgment(part: BodyPart, forceN: number, defender: Fighter, technique?: TechniqueId): MedicalJudgment {
   const threshold = partThreshold(part, defender.sex, defender.heightCm);
   const ratio = forceN / threshold.forceN;
   const name = bodyPartInfo(part).nameKo;
@@ -89,6 +105,12 @@ export function medicalJudgment(part: BodyPart, forceN: number, defender: Fighte
       extra.lines.push(`참고: 옆 복부 MAIS 4+ 25% 위험 ${n(side.value)} N`);
       extra.sourceIds.push(...side.sourceIds);
     }
+  }
+
+  const rotation = rotationLine(part, technique);
+  if (rotation) {
+    extra.lines.push(rotation.line);
+    extra.sourceIds.push(...rotation.sourceIds);
   }
 
   const text = [head, ...extra.lines].join(". ");

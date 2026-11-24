@@ -63,6 +63,15 @@ describe("의학적 판단", () => {
     expect(j.sourceIds).toContain("barnes2022");
   });
 
+  it("훅·킥으로 머리를 맞으면 회전 주의를 덧붙이고, 펀치(크로스)나 몸통에는 붙이지 않는다", () => {
+    const hook = medicalJudgment("jaw", 2000, B, "hook");
+    expect(hook.text).toContain("회전 주의: 훅");
+    expect(hook.sourceIds).toContain("viano2005");
+    expect(medicalJudgment("templeLeft", 3000, B, "highKick").text).toContain("회전 주의: 킥");
+    expect(medicalJudgment("jaw", 2000, B, "cross").text).not.toContain("회전 주의");
+    expect(medicalJudgment("liver", 2000, B, "hook").text).not.toContain("회전 주의");
+  });
+
   it("타격 결과에 판단이 붙고, 막힌 타격은 막은 부위로 판단한다", () => {
     const r = buildStrikeResult(step({ defense: "armBlock" }), A, B, 0.4);
     expect(r.outcome).toBe("blocked");

@@ -24,7 +24,7 @@ export function buildStrikeResult(
     energy: numbers.energy,
     force: numbers.force,
     intensityIndex: numbers.intensityIndex,
-    medical: medicalJudgment(hitPart, forceRegain, defender),
+    medical: medicalJudgment(hitPart, forceRegain, defender, step.technique),
     contactTimeSec,
   };
 }

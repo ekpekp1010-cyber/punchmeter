@@ -50,6 +50,11 @@ npm run build   # 배포용 빌드
 
 환경 변수(API 키)는 필요 없습니다.
 
+## 배포
+
+- 접속 주소: https://punchmeter.vercel.app
+- GitHub `main`에 올리면 Vercel이 자동으로 다시 배포합니다.
+
 ## 문서
 
 | 문서 | 내용 |

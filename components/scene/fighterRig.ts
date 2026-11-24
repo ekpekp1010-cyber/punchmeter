@@ -71,7 +71,21 @@ interface Anchor {
   index: number;
   /** 부위를 치는 쪽 방향 (모델 기준, 몸 바깥쪽) */
   from: THREE.Vector3;
+  /** 있으면 from은 이 뼈 기준 방향 (뼈를 따라 돈다 — 차는 발처럼 크게 움직이는 곳) */
+  bone?: THREE.Bone;
 }
+
+/**
+ * 부위보다 자세한 표면 점 (그림용, 2026-11-24 사용자 요청: "상대의 비골을 카프킥으로 제1중족골 부분으로 타격")
+ * - fibula: 종아리 바깥 뼈(비골) 쪽 표면 — 카프킥이 노리는 곳 (종아리 부위 높이, 바깥·조금 뒤)
+ * - firstMetatarsal: 발등의 엄지발가락 쪽(제1중족골) 표면 — 카프킥이 닿는 곳
+ */
+export type DetailPoint = "fibula" | "firstMetatarsal";
+
+/** 비골 쪽 방향: 바깥(1)에서 뒤로 조금(0.35) 기운 쪽 — 비골은 종아리 바깥·약간 뒤에 있다 (그림용) */
+const FIBULA_BACK = 0.35;
+/** 제1중족골 점: 발목→발볼의 이 비율 지점에서, 엄지 쪽(안쪽)으로 조금 옮겨 발등 쪽 표면을 고른다 (그림용) */
+const METATARSAL = { along: 0.6, medialM: 0.02, searchM: 0.05, alongWindowM: 0.012, medialWeight: 0.7 };
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -108,6 +122,7 @@ export class FighterRig {
       this.restToe[side].copy(ball).sub(this.restAnkle[side]);
     }
     this.findAnchors(info);
+    this.findDetailPoints(info);
     this.assignVertexParts(info);
     // 오른손에서 손가락 굽히는 축을 구하고, 왼손은 좌우 대칭(모델 X축 거울)으로 쓴다.
     // 회전축은 거울에 비치면 (x, y, z) → (x, −y, −z)가 된다. 이때 선수는 원점에서 회전 없이 서 있다.
@@ -292,6 +307,120 @@ export class FighterRig {
       }
       if (best) this.anchors.set(part, { mesh: best.mesh, index: best.index, from: new THREE.Vector3(...a.from) });
     }
+  }
+
+  private readonly details = new Map<string, Anchor>();
+  /** 발목에서 제1중족골 점까지 거리 (쉬는 자세, 기본 체형 m) — 카프킥 다리 길이 */
+  private readonly metatarsalReach = { l: 0, r: 0 };
+
+  /** 표면 점 후보 (쉬는 자세, 모델 좌표) 중 조건에 맞는 것에서 dir 쪽으로 가장 바깥인 점 */
+  private outermost(
+    keep: (p: THREE.Vector3) => boolean,
+    dir: THREE.Vector3,
+    origin?: THREE.Vector3,
+  ): { mesh: THREE.SkinnedMesh; index: number } | null {
+    const model = this.fighter.model;
+    const p = new THREE.Vector3();
+    const picked: { mesh: THREE.SkinnedMesh; index: number; p: THREE.Vector3 }[] = [];
+    for (const mesh of this.fighter.meshes) {
+      if (/eyebrow|eyelash|high-poly/i.test(mesh.name)) continue;
+      const count = mesh.geometry.getAttribute("position").count;
+      for (let i = 0; i < count; i++) {
+        mesh.getVertexPosition(i, p);
+        model.worldToLocal(mesh.localToWorld(p));
+        if (keep(p)) picked.push({ mesh, index: i, p: p.clone() });
+      }
+    }
+    if (picked.length === 0) return null;
+    const o = origin ?? picked.reduce((s, x) => s.add(x.p), new THREE.Vector3()).divideScalar(picked.length);
+    let best = picked[0];
+    for (const x of picked) if (x.p.clone().sub(o).dot(dir) > best.p.clone().sub(o).dot(dir)) best = x;
+    return { mesh: best.mesh, index: best.index };
+  }
+
+  /** 비골·제1중족골 표면 점을 찾는다 (처음 한 번, 원점·쉬는 자세) */
+  private findDetailPoints(info: ModelInfo) {
+    const model = this.fighter.model;
+    for (const side of ["l", "r"] as const) {
+      // 비골: 종아리 부위 높이에서 그 다리 둘레를 잘라, 바깥·조금 뒤 쪽으로 가장 바깥인 점
+      const calf = info.anchors[side === "l" ? "calfLeft" : "calfRight"].pos;
+      const sx = Math.sign(calf[0]);
+      const lateral = new THREE.Vector3(sx, 0, -FIBULA_BACK).normalize();
+      const fib = this.outermost((p) => Math.abs(p.y - calf[1]) < 0.012 && p.x * sx > 0.05 && p.x * sx < 0.4, lateral);
+      if (fib) this.details.set(`fibula_${side}`, { ...fib, from: lateral });
+
+      // 제1중족골: 발목→발볼 사이에서 엄지 쪽(몸 가운데 쪽)으로 옮긴 곳 근처의 발등·안쪽 표면
+      const ankle = model.worldToLocal(this.pos(`foot_${side}`));
+      const ball = model.worldToLocal(this.pos(`ball_${side}`));
+      const medial = new THREE.Vector3(-Math.sign(ankle.x), 0, 0);
+      const origin = ankle.clone().lerp(ball, METATARSAL.along).addScaledVector(medial, METATARSAL.medialM);
+      // 발등·안쪽 방향 (발 축에 수직으로 — 발 축 성분이 섞이면 면이 발목 쪽을 보는 것으로 잘못 잡힌다)
+      const footAxis = ball.clone().sub(ankle).normalize();
+      const dir = new THREE.Vector3(0, 1, 0).addScaledVector(medial, METATARSAL.medialWeight);
+      dir.addScaledVector(footAxis, -dir.dot(footAxis)).normalize();
+      // 발 축 방향으로는 origin 근처(±alongWindowM)만 — 바깥쪽만 고르면 발볼(중족골 머리) 쪽으로 밀려난다
+      const met = this.outermost(
+        (p) =>
+          p.distanceTo(origin) < METATARSAL.searchM &&
+          Math.abs(p.clone().sub(origin).dot(footAxis)) < METATARSAL.alongWindowM,
+        dir,
+        origin,
+      );
+      if (met) {
+        // 발등 면 방향은 발 뼈를 따라 돌아야 하므로 발 뼈 기준으로 바꿔 둔다 (지금 선수는 원점·회전 없음)
+        const foot = this.bone(`foot_${side}`);
+        const local = dir.clone().applyQuaternion(foot.getWorldQuaternion(new THREE.Quaternion()).invert());
+        this.details.set(`firstMetatarsal_${side}`, { ...met, from: local, bone: foot });
+        this.metatarsalReach[side] = this.detailWorld("firstMetatarsal", side).distanceTo(this.pos(`foot_${side}`));
+      }
+    }
+  }
+
+  /** 자세한 표면 점 (월드) — 체형 변형·자세를 따라간다 */
+  detailWorld(point: DetailPoint, side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    const a = this.details.get(`${point}_${side}`);
+    if (!a) throw new Error(`표면 점이 없습니다: ${point}_${side}`);
+    a.mesh.getVertexPosition(a.index, target);
+    return a.mesh.localToWorld(target);
+  }
+
+  /** 자세한 표면 점을 치는 쪽 방향 (월드, 몸 바깥쪽) */
+  detailFrom(point: DetailPoint, side: ArmSide, target = new THREE.Vector3()): THREE.Vector3 {
+    const a = this.details.get(`${point}_${side}`);
+    if (!a) throw new Error(`표면 점이 없습니다: ${point}_${side}`);
+    if (a.bone) return target.copy(a.from).applyQuaternion(a.bone.getWorldQuaternion(new THREE.Quaternion()));
+    return target.copy(a.from).transformDirection(this.fighter.model.matrixWorld);
+  }
+
+  /**
+   * 발을 제 축(발목→발볼)으로 굴려, 제1중족골 쪽 발등 면이 want 방향을 더 보게 한다 (최대 maxDeg°, 그림용).
+   * 카프킥에서 발등 엄지 쪽이 차고 들어가는 방향을 향하게 하는 데 쓴다.
+   */
+  rollFootToward(side: ArmSide, want: THREE.Vector3, maxDeg: number) {
+    const ankle = this.pos(`foot_${side}`);
+    const axis = this.pos(`ball_${side}`).sub(ankle).normalize();
+    const n = this.detailFrom("firstMetatarsal", side);
+    const a = n.addScaledVector(axis, -n.dot(axis));
+    const b = want.clone().addScaledVector(axis, -want.dot(axis));
+    if (a.lengthSq() < 1e-8 || b.lengthSq() < 1e-8) return;
+    a.normalize();
+    b.normalize();
+    const angle = Math.atan2(axis.dot(a.clone().cross(b)), a.dot(b));
+    const limit = THREE.MathUtils.degToRad(maxDeg);
+    this.rotateWorld(this.bone(`foot_${side}`), axis, THREE.MathUtils.clamp(angle, -limit, limit));
+  }
+
+  /** 발 뼈를 쉬는 자세 회전으로 되돌린다 (발 굴리기가 여러 번 쌓이지 않게, 다리를 다시 맞추기 전에 부른다) */
+  resetFoot(side: ArmSide) {
+    const foot = this.bone(`foot_${side}`);
+    const q = this.rest.get(foot);
+    if (q) foot.quaternion.copy(q);
+    foot.updateMatrixWorld(true);
+  }
+
+  /** 발목에서 제1중족골 점까지 거리 (월드) */
+  footReach(side: ArmSide): number {
+    return this.metatarsalReach[side] * this.scale;
   }
 
   // ── 부위 색칠 (PLAN 작업 18) ──

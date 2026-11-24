@@ -171,7 +171,8 @@ export const TECHNIQUES: TechniqueInfo[] = [
     nameKo: "카프킥",
     kind: "kick",
     limb: "leg",
-    contact: "shin",
+    // 3D: 발등 엄지 쪽(제1중족골)으로 상대 종아리 바깥 뼈(비골) 쪽을 찬다 (그림용, 2026-11-24 사용자 요청)
+    contact: "foot",
     speed: null,
     effectiveMass: { basis: "segmentEstimate", segments: KICK_SEGMENTS, note: "카프킥 자료 없음" },
     targets: ["calfLeft", "calfRight"],

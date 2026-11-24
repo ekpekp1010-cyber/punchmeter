@@ -38,7 +38,9 @@ export interface StrikeRequest {
 /** 이전 이름 (펀치만 받던 때) */
 export type PunchRequest = StrikeRequest;
 
-type Effector = "fist" | "shin" | "foot" | "knee" | "elbow";
+/** 끝점: 주먹, 정강이, 발(발바닥·뒤꿈치), 발등 엄지 쪽(제1중족골, 카프킥), 무릎, 팔꿈치 */
+type Effector = "fist" | "shin" | "foot" | "metatarsal" | "knee" | "elbow";
+const LEG_EFFECTORS: Effector[] = ["shin", "foot", "metatarsal", "knee"];
 
 /** 기술별 설정 — 모두 그림용 값 */
 interface TechSpec {
@@ -63,7 +65,9 @@ const SPEC: Record<TechniqueId, TechSpec> = {
   hook: { effector: "fist", reach: { head: 0.78, body: 0.93 }, gapM: 0.025, minDistanceM: 0.45 },
   uppercut: { effector: "fist", reach: { head: 0.8, body: 0.9 }, gapM: 0.025, minDistanceM: 0.45 },
   lowKick: { effector: "shin", reach: { head: 0.93, body: 0.93 }, gapM: 0.05, shinFrac: 0.55, minDistanceM: 0.45 },
-  calfKick: { effector: "shin", reach: { head: 0.95, body: 0.95 }, gapM: 0.05, shinFrac: 0.9, minDistanceM: 0.45 },
+  // 카프킥: 발등 엄지 쪽(제1중족골)으로 상대 비골(종아리 바깥 뼈)을 찬다 (2026-11-24 사용자 요청).
+  // 끝점이 발 표면이라 살 두께 대신 피부끼리 거의 맞닿게 둔다 (gapM 0.01)
+  calfKick: { effector: "metatarsal", reach: { head: 0.95, body: 0.95 }, gapM: 0.01, minDistanceM: 0.45 },
   middleKick: { effector: "shin", reach: { head: 0.95, body: 0.95 }, gapM: 0.05, shinFrac: 0.65, minDistanceM: 0.45 },
   highKick: { effector: "shin", reach: { head: 0.97, body: 0.97 }, gapM: 0.05, shinFrac: 0.9, minDistanceM: 0.45, riseM: 0.06 },
   // 앞차기·옆차기는 닿는 순간 다리가 거의 펴진다 (무릎이 덜 펴진 채 닿으면 어색해서 0.94·0.95 → 0.98)
@@ -74,6 +78,8 @@ const SPEC: Record<TechniqueId, TechSpec> = {
 };
 
 const shinFracOf = (t: TechniqueId) => SPEC[t].shinFrac ?? 0.6;
+/** 카프킥에서 발을 제 축으로 굴리는 최대 각도(°) — 발목을 안팎으로 돌릴 수 있는 정도 안에서 (그림용) */
+const FOOT_ROLL_DEG = 35;
 /** 두 선수 몸이 이만큼(m)까지 겹치는 것은 그냥 둔다 (살끼리 맞닿는 정도) */
 const OVERLAP_TOLERANCE_M = 0.01;
 /** 실제 길을 기록할 때 나누는 개수 */
@@ -164,6 +170,8 @@ function effectorPos(rig: FighterRig, technique: TechniqueId, side: ArmSide): TH
       return rig.shinPoint(side, shinFracOf(technique));
     case "foot":
       return rig.pos(`foot_${side}`);
+    case "metatarsal":
+      return rig.detailWorld("firstMetatarsal", side);
     case "knee":
       return rig.kneePos(side);
     case "elbow":
@@ -182,13 +190,20 @@ function rootAndLength(rig: FighterRig, technique: TechniqueId, side: ArmSide): 
     return { root: rig.shoulder(side), length: rig.armLengths(side).upper + FighterRig.ELBOW_TIP_M * rig.scale };
   }
   const { thigh, shank } = rig.legLengths(side);
-  const length = effector === "knee" ? thigh : effector === "shin" ? thigh + shank * shinFracOf(technique) : thigh + shank;
+  const length =
+    effector === "knee"
+      ? thigh
+      : effector === "shin"
+        ? thigh + shank * shinFracOf(technique)
+        : effector === "metatarsal"
+          ? thigh + shank + rig.footReach(side)
+          : thigh + shank;
   return { root: rig.hip(side), length };
 }
 
 /** 진행 정도 u(0~1)의 몸통·골반 자세 */
 function poseBody(rig: FighterRig, technique: TechniqueId, sign: number, u: number) {
-  const isLeg = ["shin", "foot", "knee"].includes(SPEC[technique].effector);
+  const isLeg = LEG_EFFECTORS.includes(SPEC[technique].effector);
   const kicking: ArmSide = sign > 0 ? "r" : "l";
   const standing: ArmSide = sign > 0 ? "l" : "r";
   const hipTwist = HIP_TWIST_DEG[technique] * sign * u;
@@ -214,7 +229,7 @@ const LEG_LAND_U = 0.35;
 /** 끝점을 목표에 놓는 팔다리 자세 (몸통 자세 뒤에 부른다). 닿았는지 돌려준다 */
 function poseLimb(rig: FighterRig, technique: TechniqueId, side: ArmSide, goal: THREE.Vector3, u: number): boolean {
   const reached = poseLimbRaw(rig, technique, side, goal, u);
-  if (["shin", "foot", "knee"].includes(SPEC[technique].effector)) {
+  if (LEG_EFFECTORS.includes(SPEC[technique].effector)) {
     if (u < LEG_LAND_U) rig.blendLegToStance(side, smoothStep(u / LEG_LAND_U));
     rig.keepToeAboveGround(side);
   }
@@ -234,6 +249,32 @@ function poseLimbRaw(rig: FighterRig, technique: TechniqueId, side: ArmSide, goa
     case "shin":
       rig.guard();
       return rig.reachLeg(side, goal, rig.kneePole(side, u), shinFracOf(technique));
+    case "metatarsal": {
+      // 발끝을 정강이 방향으로 뻗고(발등이 정강이에 이어지게), 발목 목표를 고쳐 가며 제1중족골 점을 목표에 맞춘다
+      // 발은 제 축으로 조금 굴려(최대 FOOT_ROLL_DEG) 발등 엄지 쪽 면이 차고 들어가는 쪽(몸 안쪽)을 보게 한다
+      rig.guard();
+      const pole = rig.kneePole(side, u);
+      const inward = rig.outward(side).negate();
+      // 발목 목표를 빗나간 만큼 옮겨 다시 푼다. 다리를 거의 편 자세에서는 정강이 방향이 크게 바뀌어 넘치므로
+      // 70%씩만 옮기고, 가장 잘 맞은 발목 목표를 마지막에 쓴다
+      const place = (ankleGoal: THREE.Vector3) => {
+        rig.resetFoot(side); // 굴리기가 쌓이지 않게 발을 먼저 되돌린다
+        const ok = rig.reachLeg(side, ankleGoal, pole, 1);
+        rig.rollFootToward(side, inward, FOOT_ROLL_DEG * u);
+        return ok;
+      };
+      const ankleGoal = goal.clone();
+      let best = { goal: ankleGoal.clone(), miss: Infinity };
+      for (let i = 0; i < 10; i++) {
+        place(ankleGoal);
+        const miss = goal.clone().sub(rig.detailWorld("firstMetatarsal", side));
+        if (miss.length() < best.miss) best = { goal: ankleGoal.clone(), miss: miss.length() };
+        if (best.miss < 0.001) break;
+        ankleGoal.addScaledVector(miss, 0.7);
+      }
+      const reached = place(best.goal);
+      return reached && best.miss < 0.01 * rig.scale;
+    }
     case "foot": {
       rig.guard();
       const up = new THREE.Vector3(0, 1, 0);
@@ -335,6 +376,11 @@ export function prepareStrike(
   const gap = Math.max(gloveGap ?? 0, spec.gapM * defender.scale);
   /** 닿을 곳: 노린 부위(막았으면 막은 팔다리) 표면에서 닿는 면 두께만큼 바깥 */
   const aimPoint = () => {
+    // 카프킥이 막히지 않으면 종아리 부위 안에서도 바깥 뼈(비골) 쪽을 노린다
+    if (hitPart === req.target && req.technique === "calfKick") {
+      const legSide: ArmSide = bodyPartInfo(req.target).side === "left" ? "l" : "r";
+      return defender.detailWorld("fibula", legSide).addScaledVector(defender.detailFrom("fibula", legSide), gap);
+    }
     if (hitPart === req.target) return defender.partWorld(req.target).addScaledVector(defender.partFrom(req.target), gap);
     const toAttacker = attacker.fighter.root.position.clone().sub(defender.fighter.root.position).setY(0).normalize();
     return defender.partWorld(hitPart).addScaledVector(toAttacker, gap);
